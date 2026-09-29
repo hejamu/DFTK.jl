@@ -1,0 +1,3 @@
+results/*.jld2
+*.out
+.julia_depot/
