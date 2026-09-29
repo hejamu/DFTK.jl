@@ -53,7 +53,9 @@ The sum rule holds with the modified Drude weight D̃ once the mesh resolves the
 (spacing ≲ T/v_F), and fails with D by ≈0.10 e, as in the paper. At T = 0.01 Ha even 16³
 is far from converged (Z has settled at ≈2.07 at 12³–16³, but D has not). Wannier-type
 interpolation or much denser meshes are needed for small smearing, as Dreyer et al. note.
-The 4-atom conventional cell at T = 0.01 (2³–6³) is equally unconverged; T = 0.1 runs pending.
+At T = 0.1 the residual vs D̃ is 7e-4 from 12³ on, while ΣZ − D stays at +0.109 ± 0.001.
+The 4-atom conventional cell was run only at T = 0.01 (2³–6³), where it is equally
+unconverged; it has not been rerun at large smearing.
 
 ### NaCl (Ecut 15, insulator): ASR Σ_κ Z_κ = 0
 
