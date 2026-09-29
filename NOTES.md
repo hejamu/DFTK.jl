@@ -94,3 +94,14 @@ Check: ⟨δ⊥_v u_n|δ⊥_τ u_n⟩ = Σ_{m∈Q} v_nm H_mn/(ε_n−ε_m)² ✓
 with ψk = all P bands and no extra bands solves exactly this. P must be tightly converged
 eigenvectors (a separate non-SCF LOBPCG, `converged_bands`), since the P-internal sum uses
 them as exact eigenpairs.
+
+## Findings from validation (see RESULTS.md)
+
+- The velocity-gauge ASR is a BZ integral of ∂_k Tr[P_k p̃]: it converges with k-sampling
+  (NaCl: 0.20 → 0.013 from 3³ to 6³), not identically.
+- The metal sum rule needs the mesh to resolve the smearing (spacing ≲ T/v_F). At fixed
+  smearing it closes with D̃ (Al, T = 0.03, 20³: −0.002; T = 0.1, 8³: +0.003) and misses D by
+  ≈0.10 e.
+- For a molecule in vacuum the velocity and length gauges disagree beyond k and box
+  effects (RESULTS.md, open issue 1).
+- Au with 11 valence electrons: use `cp2k.nc.sr.lda.v0_1.semicore.gth` (largecore Au has 1 e⁻).

@@ -1,0 +1,12 @@
+n     Energy            log10(ΔE)   log10(Δρ)   Diag   Δtime 
+n_G = 4337
+NABEC (stn) time: 49.63180103 s
+L=10 nk=1  max |Z_SOS - Z_FD| = 1.40e-01   ASR residual: SOS 1.86e-01, FD 1.30e-02
+ERROR: LoadError: Some tests did not pass: 0 passed, 2 failed, 0 errored, 0 broken.
+srun: error: ws01: task 0: Exited with exit code 1
+n     Energy            log10(ΔE)   log10(Δρ)   Diag   Δtime 
+n_G = 7249
+NABEC (stn) time: 61.564662187 s
+L=12 nk=1  max |Z_SOS - Z_FD| = 6.73e-02   ASR residual: SOS 4.44e-02, FD 3.83e-03
+ERROR: LoadError: Some tests did not pass: 0 passed, 2 failed, 0 errored, 0 broken.
+srun: error: ws01: task 0: Exited with exit code 1

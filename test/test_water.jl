@@ -44,15 +44,17 @@ end
                    kgrid=fill(parse(Int, get(ENV, "NABEC_NK", "2")), 3))
     scfres = self_consistent_field(basis; tol=1e-11)
     println("n_G = ", length(G_vectors(basis, basis.kpoints[1])))
-    t = @elapsed res = nabec_sos(scfres; tol_response=1e-10)
-    println("SOS NABEC time: $t s")
+    method = get(ENV, "NABEC_METHOD", "sos")
+    t = @elapsed res = method == "sos" ? nabec_sos(scfres; tol_response=1e-10) :
+                                         nabec_sternheimer(scfres; tol_response=1e-10)
+    println("NABEC ($method) time: $t s")
     Zfd = fd_apt(basis)
     print_tensors("NABEC (velocity gauge, SOS):", res.Z)
     print_tensors("FD dipole APT:", Zfd)
     maxdiff = maximum(maximum(abs, res.Z[s] - Zfd[s]) for s in eachindex(Zfd))
     asr_sos = maximum(abs, sum(res.Z))
     asr_fd  = maximum(abs, sum(Zfd))
-    @printf "max |Z_SOS - Z_FD| = %.2e   ASR residual: SOS %.2e, FD %.2e\n" maxdiff asr_sos asr_fd
+    @printf "L=%s nk=%s  max |Z_SOS - Z_FD| = %.2e   ASR residual: SOS %.2e, FD %.2e\n" get(ENV, "NABEC_L", "10") get(ENV, "NABEC_NK", "2") maxdiff asr_sos asr_fd
     @test maxdiff < 1e-3
     @test asr_sos < 2e-2
 end

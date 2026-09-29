@@ -38,7 +38,7 @@ Isolated H2O (LDA geometry close to experiment: r_OH = 1.81 bohr, ∠HOH = 104.5
 centered in a cubic box of side `L` bohr; slightly off-symmetric positions avoid
 accidental degeneracies with the box.
 """
-function water(; Ecut=20, L=12.0, kgrid=[1, 1, 1])
+function water(; Ecut=20, L=12.0, kgrid=[1, 1, 1], functionals=LDA())
     r, θ = 1.81, deg2rad(104.5)
     c = [L/2, L/2, L/2]
     R_O  = c
@@ -51,7 +51,7 @@ function water(; Ecut=20, L=12.0, kgrid=[1, 1, 1])
     O = ElementPsp(:O, GTH_LDA)
     H = ElementPsp(:H, GTH_LDA)
     positions = [lattice \ R for R in (R_O, R_H1, R_H2)]
-    model = model_DFT(Matrix(lattice), [O, H, H], positions; functionals=LDA(),
+    model = model_DFT(Matrix(lattice), [O, H, H], positions; functionals,
                       symmetries=false)
     PlaneWaveBasis(model; Ecut, kgrid)
 end

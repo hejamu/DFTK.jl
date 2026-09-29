@@ -73,7 +73,12 @@ function nabec_sternheimer(scfres; n_bands=nothing, phonon=nothing,
         fO = f[ik][O]
         Hk = scfres.ham.blocks[ik]
 
+        # All of P is projected out; no Schur-complement extra bands (the solver's
+        # defaults for those are sized like ψk and would not match ε[O]).
+        no_extra = zeros(eltype(ψP), size(ψP, 1), 0)
         δ⊥(rhs) = DFTK.sternheimer_solver(Hk, ψP, ε[O], rhs; tol=tol_sternheimer,
+                                          ψk_extra=no_extra, Hψk_extra=no_extra,
+                                          εk_extra=zeros(real(eltype(ψP)), 0),
                                           maxiter=maxiter_sternheimer).δψk
 
         v    = VelocityOperator(basis, ik)
