@@ -124,3 +124,22 @@ them as exact eigenpairs.
   slab-probe crash). Scripts outside `src/` can be copied freely.
 - **Au semicore GTH:** (Ω/π)D̃ ≈ 0.41 vs D ≈ 0.98 per atom (8³, T = 0.1); the NABEC sum rule
   follows D̃, so the pseudopotential velocity term is large for Au (cf. arXiv:2503.18811).
+
+## Resolution of the H2O gauge discrepancy (2026-09-30)
+
+- The NABEC code is exact for DFTK's discrete Hamiltonian: our fixed-G H(k) equals DFTK's own
+  H(k) to 1e-16 (second k-differences to 3e-9), and a finite difference in k of
+  g(k) = Σ f ⟨u|p̃|u⟩ reproduces the velocity-gauge ASR component by component.
+- Velocity-gauge (Γ-point ∂_k) = dipole derivative only for flat occupied bands. For water that
+  needs L ≳ 16–20 bohr (gap 0.047 → 0.0038 → 0.0008 e at L = 12, 16, 20 with PseudoDojo). The
+  length gauge converges much earlier, so a converged FD result does not imply a converged box
+  for the NABEC.
+- GTH (cp2k) O/Ne projectors are very hard in momentum space: k-derivatives (velocities, band
+  curvatures, ASR) do not converge with Ecut up to 80 Ha and oscillate; an isolated GTH Ne atom
+  has spurious band curvature ~0.03–0.06 that does not change with L. This masked the box effect.
+  PseudoDojo NC (ONCVPSP) converges at 30 Ha.
+- Consequence: use PseudoDojo (`dojo.nc.sr.lda.v0_4_1.standard.upf`) for NABECs. Dojo O and Au
+  have NLCC, which DFTK's phonon δH ignores → run with `Xc(...; use_nlcc=false)` for now
+  (open issue: NLCC in the phonon response). Dojo Au has 19 valence e⁻ (GTH semicore: 11).
+- The large Au D vs D̃ gap with GTH semicore (0.99 vs 0.37 at 20 Ha) is a velocity-type quantity
+  and must be re-checked with PseudoDojo.

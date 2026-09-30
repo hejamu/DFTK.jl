@@ -68,9 +68,22 @@ unconverged; it has not been rerun at large smearing.
 The velocity-gauge ASR is a BZ integral of a total derivative (NOTES.md), so it converges
 with k. Z*(Na) ≈ 1.10 is in line with LDA literature (≈1.1).
 
-### H2O: NABEC vs finite-difference dipole APT — **OPEN, does not agree**
+### H2O: NABEC vs finite-difference dipole APT — **resolved: agree to < 1e-3 e**
 
-See "Open issues" below.
+With PseudoDojo NC LDA (NLCC off, Ecut 30 Ha, cutoff-converged), Γ only:
+
+| L (bohr) | max \|Z_NABEC − Z_FD\| | ΔO zz | ASR velocity gauge | ASR length gauge |
+|---|---|---|---|---|
+| 12 | 0.047 | −0.047 | 0.055 | 0.002 |
+| 16 | 0.0038 | −0.0038 | 0.0050 | 0.0002 |
+| 20 | **0.0008** | −0.0008 | 0.0013 | 0.0002 |
+
+(Z_FD = length-gauge APT −∫ r δρ, which equals the finite-difference dipole APT to 5 digits.)
+Two effects were mixed in the earlier GTH runs (open issue 1 below, kept for the record):
+the Γ-point velocity gauge needs flat occupied bands, which requires L ≳ 16–20 bohr for water
+(the length gauge is converged already at L = 12); and GTH O projectors are so hard that
+velocity-type quantities do not converge with Ecut up to 80 Ha, which masked the box-size
+dependence. Use plane-wave pseudopotentials (PseudoDojo) for NABECs.
 
 ## Phase 4: Sternheimer = SOS
 
@@ -87,7 +100,7 @@ Not started (blocked on the H2O issue, see below). Au with 11 e⁻ is only in th
 
 ## Open issues
 
-1. **H2O velocity-gauge NABEC ≠ FD dipole APT.** Max deviation per tensor element:
+1. ~~**H2O velocity-gauge NABEC ≠ FD dipole APT.**~~ **Resolved** (see the H2O section above: box size + GTH hardness). Record of the investigation — max deviation per tensor element:
 
    | L (bohr) | Ecut | k-mesh | max\|Z_NABEC − Z_FD\| | ASR NABEC | ASR FD |
    |---|---|---|---|---|---|
@@ -128,7 +141,28 @@ Not started (blocked on the H2O issue, see below). Au with 11 e⁻ is only in th
    partly reduced by Ecut (0.067 → 0.031 → 0.028 for 20/30/40 Ha, ASR not converging).
    Al and NaCl (no vacuum) do not show it: the Al sum rule closes to 0.003.
 
-   Hypothesis (not confirmed): the gauge identity needs H|m⟩ to stay in the basis. The
+   **Follow-up (2026-09-30, `scripts/water_variants.jl`, L = 12, Γ):**
+
+   | Hamiltonian | Ecut (Ha) | max\|vel−len\| | ΔO xx | ΔO yy | ΔO zz | ASR vel | ASR len | HOMO–LUMO (Ha) |
+   |---|---|---|---|---|---|---|---|---|
+   | LDA | 20 | 0.067 | +0.067 | +0.049 | +0.008 | 0.044 | 0.004 | 0.209 |
+   | LDA | 50 | 0.034 | +0.014 | −0.001 | −0.034 | 0.044 | 0.002 | 0.214 |
+   | LDA | 60 | 0.038 | +0.009 | −0.006 | −0.038 | 0.047 | 0.002 | 0.214 |
+   | LDA | 80 | 0.042 | +0.005 | −0.010 | −0.042 | 0.050 | 0.002 | 0.214 |
+   | Slater x, raw ρ^{4/3} | 20 / 40 | 0.069 / 0.046 | | | −0.014 / −0.046 | 0.043 / 0.063 | | 0.18 |
+   | Slater x, regularized (ρ0 = 1e-3) | 20 / 40 | 0.073 / 0.090 | | | −0.064 / −0.090 | 0.105 / 0.119 | | 0.13 |
+   | LDA without nonlocal term | 20 / 40 | unusable (length-gauge ASR 6–10: not a bound molecule) | | | | | | |
+
+   - The gap does **not** close with cutoff (50–80 Ha ≈ 400–640 Ry CP2K density cutoff):
+     O xx/yy converge, O zz converges to ≈ −0.045, the velocity-gauge ASR stays at ≈ 0.05.
+   - Smoothing the xc potential in the vacuum makes it worse, not better → the vacuum-xc
+     hypothesis is refuted. The error grows as the HOMO–LUMO gap shrinks.
+   - Decomposition of O zz (`scripts/diag_water_zz.jl`, Ecut 20): the identity
+     ⟨m|v_z|n⟩ = i(ε_m−ε_n)⟨m|z|n⟩ already fails by 19 % for the 8 lowest (diffuse) empty
+     states, which carry −0.12 of the O zz difference; the HOMO (out-of-plane lone pair)
+     carries the largest per-orbital share (−0.054).
+
+   Earlier hypothesis (refuted by the follow-up): the gauge identity needs H|m⟩ to stay in the basis. The
    LDA V_xc on the grid in the vacuum region (ρ^{1/3} of density tails) has Fourier
    content up to the grid limit at any Ecut, which would explain the lack of Ecut
    convergence and the absence in bulk. A Hartree-only control was inconclusive (the

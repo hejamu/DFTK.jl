@@ -10,7 +10,7 @@
 #
 # Env: NABEC_ECUT (20), NABEC_NK (4), NABEC_T (0.03), NABEC_ATOMS (water|all),
 #      NABEC_FDZ (0|1), NABEC_REF (1|0)
-using NABEC, DFTK, LinearAlgebra, Printf, Dates
+using NABEC, DFTK, LinearAlgebra, Printf, Dates, Serialization
 include(joinpath(@__DIR__, "..", "test", "slab_systems.jl"))
 
 Ecut  = parse(Float64, get(ENV, "NABEC_ECUT", "20"))
@@ -41,9 +41,22 @@ bands = NABEC.converged_bands(scfres.ham, n_occ + max(12, n_occ ÷ 4); tol=1e-9)
 say("[$(stamp())] (Ω/π)D  diag = ", round.(diag(D); digits=4))
 say("           (Ω/π)D̃  diag = ", round.(diag(Dtilde); digits=4))
 
-ph  = ScreenedPhonon(scfres; atoms, tol=1e-8)   # ≈1800 s per response at 2×2 k (probe)
+# Screened responses cost ≈1800 s each at 2×2 k: checkpoint them (keyed by setting), so a
+# job that hits its time limit in the NABEC stage can restart from here.
+ckpt = "results/slab_ph_$tag.jls"
+ph = if isfile(ckpt)
+    say("[$(stamp())] loading screened responses from $ckpt")
+    (; atoms_saved, δVloc, δVbare, δρ) = deserialize(ckpt)
+    @assert atoms_saved == atoms
+    ScreenedPhonon(basis, atoms, δVloc, δVbare, δρ)
+else
+    p = ScreenedPhonon(scfres; atoms, tol=1e-8)
+    serialize(ckpt, (; atoms_saved=atoms, p.δVloc, p.δVbare, p.δρ))
+    p
+end
 say("[$(stamp())] screened responses done")
-res = nabec_sternheimer(scfres; atoms, phonon=ph, bands, tol_sternheimer=1e-9)
+tol_stn = parse(Float64, get(ENV, "NABEC_TOL_STN", "1e-7"))
+res = nabec_sternheimer(scfres; atoms, phonon=ph, bands, tol_sternheimer=tol_stn)
 say("[$(stamp())] NABEC done")
 
 Zw = [res.Z[findfirst(==(i), atoms)] for i in ws]
