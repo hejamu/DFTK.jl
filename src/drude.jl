@@ -23,6 +23,11 @@ function drude_weight(basis::PlaneWaveBasis{T}, bands::BandSet, εF;
     Dt = zeros(T, 3, 3)
     iszero(basis.model.temperature) && return (; D, Dtilde=Dt)
     (; fp) = occupations_and_derivatives(basis, bands, εF)
+    # At time-reversal-invariant k (k ≡ −k mod G) every band velocity vanishes, so a mesh
+    # made only of such points (e.g. unshifted 2×2×1) gives D = 0 identically.
+    is_trim(k) = all(x -> isapprox(2x, round(2x); atol=1e-10), k)
+    all(kpt -> is_trim(kpt.coordinate), basis.kpoints) &&
+        @warn "All k-points are time-reversal invariant: band velocities vanish, D = 0 by symmetry"
 
     for (ik, kpt) in enumerate(basis.kpoints)
         ε  = bands.eigenvalues[ik]

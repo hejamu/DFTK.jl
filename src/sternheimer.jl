@@ -43,9 +43,10 @@ end
     nabec_sternheimer(scfres; n_bands, phonon, tol_sternheimer, ...)
 
 NABEC with the split P ⊕ Q formula. `n_bands` sets the size of P (default: occupied bands
-plus a margin). Returns the same named tuple as `nabec_sos`.
+plus a margin); alternatively pass converged `bands` (e.g. from `converged_bands`) to reuse
+them for the Drude weight. Returns the same named tuple as `nabec_sos`.
 """
-function nabec_sternheimer(scfres; n_bands=nothing, phonon=nothing,
+function nabec_sternheimer(scfres; n_bands=nothing, bands=nothing, phonon=nothing,
                            atoms=1:length(scfres.basis.model.positions),
                            degeneracy_tol=1e-6, occupation_threshold=1e-12,
                            tol_sternheimer=1e-10, tol_response=1e-10, tol_bands=1e-10,
@@ -58,9 +59,12 @@ function nabec_sternheimer(scfres; n_bands=nothing, phonon=nothing,
     @assert phonon.atoms == collect(atoms)
     εF = scfres.εF
 
-    n_occ_max = maximum(count(>(occupation_threshold), fk) for fk in scfres.occupation)
-    n_bands = something(n_bands, n_occ_max + max(8, n_occ_max ÷ 2))
-    bands = converged_bands(scfres.ham, n_bands; tol=tol_bands)
+    if isnothing(bands)
+        n_occ_max = maximum(count(>(occupation_threshold), fk) for fk in scfres.occupation)
+        n_bands = something(n_bands, n_occ_max + max(8, n_occ_max ÷ 2))
+        bands = converged_bands(scfres.ham, n_bands; tol=tol_bands)
+    end
+    n_bands = minimum(length, bands.eigenvalues)
     (; f) = occupations_and_derivatives(basis, bands, εF)
 
     Zel = [zeros(3, 3) for _ in atoms]

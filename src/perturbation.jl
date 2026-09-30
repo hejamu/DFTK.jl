@@ -30,13 +30,18 @@ function ScreenedPhonon(scfres; atoms=1:length(scfres.basis.model.positions),
     δVbare = [DFTK.derivative_wrt_αs(basis.model.positions, α, s) do positions_αs
                   DFTK.compute_local_potential(basis; positions=positions_αs)
               end for α = 1:3, s in atoms]
-    res = [begin
-               δHextψ = DFTK.compute_δHψ_αs(basis, scfres.ψ, α, s, q0)
-               DFTK.solve_ΩplusK_split(scfres, δHextψ; tol, verbose, mixing, kwargs...)
-           end for α = 1:3, s in atoms]
-    # δVind is fft_size × n_spin; only the spin-unpolarized case is supported
-    δVloc = map((Vb, r) -> Vb .+ r.δVind[:, :, :, 1], δVbare, res)
-    ScreenedPhonon(basis, atoms, δVloc, δVbare, map(r -> r.δρ, res))
+    # Keep only δV_ind and δρ of each response: the full result also holds δψ and δHtotψ
+    # over all k-points, which would accumulate to 2·3n_atoms copies of the orbitals.
+    # δVind is fft_size × n_spin; only the spin-unpolarized case is supported.
+    δVloc = similar(δVbare)
+    δρ    = Matrix{Array{Float64, 4}}(undef, size(δVbare))
+    for (is, s) in enumerate(atoms), α = 1:3
+        δHextψ = DFTK.compute_δHψ_αs(basis, scfres.ψ, α, s, q0)
+        res = DFTK.solve_ΩplusK_split(scfres, δHextψ; tol, verbose, mixing, kwargs...)
+        δVloc[α, is] = δVbare[α, is] .+ res.δVind[:, :, :, 1]
+        δρ[α, is]    = res.δρ
+    end
+    ScreenedPhonon(basis, atoms, δVloc, δVbare, δρ)
 end
 
 is_metal(scfres) = !DFTK.is_effective_insulator(scfres.basis, scfres.eigenvalues, scfres.εF)

@@ -1,0 +1,391 @@
+<title>Water APT Gauge Check</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Serif:wght@500;600&display=swap">
+<style>
+:root {
+  --ground: #f7f8f6;
+  --surface: #ffffff;
+  --ink: #161a18;
+  --ink-2: #5b635e;
+  --ink-3: #8a918c;
+  --rule: #dfe3df;
+  --grid: #eceeeb;
+  --nabec: #2a78d6;
+  --fd: #eb6834;
+  --neg: #2a78d6;
+  --pos: #e34948;
+  --mid: #f0efec;
+  --chip: #eef1ee;
+  --focus: #2a78d6;
+  --serif: "IBM Plex Serif", Georgia, "Times New Roman", serif;
+  --sans: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --ground: #141615; --surface: #1b1e1c; --ink: #eef1ee; --ink-2: #b4bbb6; --ink-3: #858c87;
+    --rule: #2e3330; --grid: #262a28; --nabec: #3987e5; --fd: #d95926;
+    --neg: #3987e5; --pos: #e66767; --mid: #383835; --chip: #242826; --focus: #6da7ec;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --ground: #141615; --surface: #1b1e1c; --ink: #eef1ee; --ink-2: #b4bbb6; --ink-3: #858c87;
+  --rule: #2e3330; --grid: #262a28; --nabec: #3987e5; --fd: #d95926;
+  --neg: #3987e5; --pos: #e66767; --mid: #383835; --chip: #242826; --focus: #6da7ec;
+}
+* { box-sizing: border-box; }
+body { background: var(--ground); color: var(--ink); font: 15px/1.55 var(--sans); }
+.page { max-width: 1060px; margin: 0 auto; padding-inline: 20px; padding-block: 28px 56px; }
+h1, h2 { font-family: var(--serif); font-weight: 600; text-wrap: balance; margin: 0; }
+h1 { font-size: 30px; line-height: 1.2; letter-spacing: -0.01em; }
+h2 { font-size: 20px; line-height: 1.3; }
+p { margin: 0; max-width: 68ch; }
+.eyebrow { font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-2); font-weight: 600; }
+.lede { color: var(--ink-2); margin-top: 10px; }
+header { display: grid; gap: 6px; padding-bottom: 22px; border-bottom: 1px solid var(--rule); }
+section { display: grid; gap: 14px; padding-block: 28px; border-bottom: 1px solid var(--rule); }
+section:last-of-type { border-bottom: 0; }
+.note { font-size: 13px; color: var(--ink-2); }
+.mono { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+
+.facts { display: flex; flex-wrap: wrap; gap: 10px 28px; margin-top: 14px; }
+.fact { display: grid; gap: 2px; }
+.fact b { font-family: var(--mono); font-size: 20px; font-weight: 500; }
+.fact span { font-size: 12px; color: var(--ink-2); }
+
+.controls { display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: center; }
+.seg { display: inline-flex; flex-wrap: wrap; border: 1px solid var(--rule); border-radius: 8px; overflow: hidden; background: var(--surface); }
+.seg button { font: 500 13px var(--sans); color: var(--ink-2); background: transparent; border: 0; padding: 7px 12px; cursor: pointer; border-right: 1px solid var(--rule); }
+.seg button:last-child { border-right: 0; }
+.seg button[aria-pressed="true"] { background: var(--ink); color: var(--ground); }
+.seg button:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
+.setting-desc { font-size: 13px; color: var(--ink-2); }
+
+.legend { display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: 13px; color: var(--ink-2); }
+.legend i { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; vertical-align: -1px; }
+
+.atoms { display: grid; gap: 22px; }
+.atom-row { display: grid; gap: 10px; }
+.atom-row h3 { margin: 0; font: 600 14px var(--sans); }
+.atom-row h3 small { font-weight: 400; color: var(--ink-2); margin-left: 6px; }
+.maps { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+.map { display: grid; gap: 6px; }
+.map .cap { font-size: 12px; color: var(--ink-2); display: flex; align-items: center; gap: 6px; }
+.map .cap i { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+.grid3 { display: grid; grid-template-columns: 22px repeat(3, minmax(0, 1fr)); grid-template-rows: 18px repeat(3, auto); gap: 3px; }
+.grid3 .ax { font: 500 11px var(--mono); color: var(--ink-3); display: flex; align-items: center; justify-content: center; }
+.cell { font: 400 13px var(--mono); font-variant-numeric: tabular-nums; text-align: right; padding: 9px 8px; border-radius: 4px; background: var(--chip); color: var(--ink); white-space: nowrap; overflow: hidden; }
+.cell.diag { font-weight: 500; }
+.cell.zero { color: var(--ink-3); }
+.dcell { color: var(--ink); }
+.scale { display: flex; align-items: center; gap: 8px; font: 11px var(--mono); color: var(--ink-2); }
+.scale .bar { height: 8px; flex: 0 1 160px; border-radius: 2px; }
+
+.chart-wrap { overflow-x: auto; }
+svg text { font-family: var(--sans); }
+.pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 22px; }
+.chart-card { display: grid; gap: 6px; }
+.chart-card h3 { margin: 0; font: 600 14px var(--sans); }
+.chart-card p { font-size: 13px; color: var(--ink-2); }
+
+.tip { position: fixed; pointer-events: none; background: var(--surface); color: var(--ink); border: 1px solid var(--rule); border-radius: 6px; padding: 7px 9px; font: 12px/1.45 var(--sans); box-shadow: 0 4px 14px rgba(0,0,0,.12); z-index: 10; max-width: 260px; }
+.tip .mono { font-size: 12px; }
+
+details { background: var(--surface); border: 1px solid var(--rule); border-radius: 8px; padding: 10px 14px; }
+summary { cursor: pointer; font-weight: 500; }
+summary:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.tablewrap { overflow-x: auto; margin-top: 10px; }
+table { border-collapse: collapse; font: 13px var(--mono); font-variant-numeric: tabular-nums; }
+th, td { padding: 4px 10px; text-align: right; border-bottom: 1px solid var(--grid); white-space: nowrap; }
+th { font: 600 12px var(--sans); color: var(--ink-2); text-align: right; }
+th:first-child, td:first-child { text-align: left; }
+
+@media (max-width: 720px) {
+  .maps { grid-template-columns: 1fr; }
+  .pair { grid-template-columns: 1fr; }
+  h1 { font-size: 25px; }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .cell { transition: background-color .2s ease; }
+}
+</style>
+
+<div class="page">
+  <header>
+    <div class="eyebrow">naBEC · Phase 3 validation · isolated H₂O</div>
+    <h1>Velocity-gauge NABEC vs finite-difference APT for water</h1>
+    <p class="lede">For an insulator the NABEC is the ordinary atomic polar tensor, so the Dreyer Eq. 7 result must match the finite-difference dipole derivative. The length-gauge APT (−∫ r δρ from the same screened response) reproduces FD to five digits; the velocity-gauge NABEC does not. LDA, GTH, cubic box of side L, Ecut in Ha. Charges in e; tensors Z[α, β] with α = dipole direction, β = displacement.</p>
+    <div class="facts" id="facts"></div>
+  </header>
+
+  <section>
+    <div class="controls">
+      <div class="seg" role="group" aria-label="Calculation setting" id="settingSeg"></div>
+      <span class="setting-desc" id="settingDesc"></span>
+    </div>
+    <div class="legend">
+      <span><i style="background:var(--nabec)"></i>NABEC, velocity gauge (Eq. 7)</span>
+      <span><i style="background:var(--fd)"></i><span id="refName">FD dipole APT</span></span>
+      <span class="scale">Δ = NABEC − reference <span class="bar" id="scaleBar"></span><span id="scaleLab"></span></span>
+    </div>
+    <div class="atoms" id="atoms"></div>
+    <p class="note">The two H atoms are mirror images; H₂ is omitted (its FD tensor differs from H₁ by ≤ 0.004 through grid effects). Hover a cell for the component name.</p>
+  </section>
+
+  <section>
+    <h2>Component by component</h2>
+    <p class="note">Each row is one tensor component for the selected setting; the line spans the gap between the two methods. Components that vanish by symmetry are left out.</p>
+    <div class="chart-wrap"><svg id="dumbbell" role="img" aria-label="Dumbbell chart of NABEC vs reference per component"></svg></div>
+  </section>
+
+  <section>
+    <h2>What the gap depends on</h2>
+    <div class="pair">
+      <div class="chart-card">
+        <h3>Box size (Ecut 20 Ha, Γ)</h3>
+        <p>Largest |Z_NABEC − Z_FD| over all components.</p>
+        <svg id="chartL" role="img" aria-label="Max deviation vs box size"></svg>
+      </div>
+      <div class="chart-card">
+        <h3>Cutoff (L = 12 bohr, Γ)</h3>
+        <p>Same quantity against the plane-wave cutoff.</p>
+        <svg id="chartE" role="img" aria-label="Max deviation vs cutoff"></svg>
+      </div>
+    </div>
+    <p class="note">The drop from L = 10 to 12 is box dispersion (k-sampling removes it too: 0.061 at 2³). From 12 bohr on the gap is flat in L and shrinks only partly with Ecut, while the FD sum rule is already clean (Σ_κ Z ≤ 0.004). The NABEC sum-rule residual stays at 0.03–0.05 throughout.</p>
+    <details>
+      <summary>Sum-rule residuals (max |Σ_κ Z_κ|, ideally 0)</summary>
+      <div class="tablewrap"><table id="asrTable"></table></div>
+    </details>
+  </section>
+
+  <section>
+    <h2>All tensors</h2>
+    <details>
+      <summary>Table view of every tensor shown on this page</summary>
+      <div class="tablewrap"><table id="allTable"></table></div>
+    </details>
+  </section>
+</div>
+<div class="tip" id="tip" hidden></div>
+
+<script>
+// ---- Measured data (DFTK 5a94a14, naBEC 636dd81). Full tensors, rows α = x,y,z; cols β = x,y,z.
+const SETTINGS = [
+  { id: "L10g", label: "L 10 · Γ", desc: "L = 10 bohr, Ecut 20, Γ only. Sum over states vs FD (18 displaced SCFs).", ref: "FD dipole APT",
+    O:  { nabec: [[-0.44553,0,0],[0,-0.33069,0],[0,0,-0.76167]], ref: [[-0.51086,-0.00058,0],[0,-0.32385,0],[0,-0.00003,-0.62182]] },
+    H1: { nabec: [[0.22132,-0.04956,0],[-0.12434,0.11675,0],[0,0,0.28797]], ref: [[0.26337,-0.04325,0],[-0.08293,0.16582,0],[0.00014,0.00002,0.31316]] } },
+  { id: "L10k2", label: "L 10 · 2³", desc: "L = 10 bohr, Ecut 20, 2×2×2 k-mesh (removes box dispersion). Sum over states vs FD.", ref: "FD dipole APT",
+    O:  { nabec: [[-0.46224,0,0],[0,-0.27488,0],[0,0,-0.56926]], ref: [[-0.52303,-0.00202,0],[0,-0.32564,0],[0,-0.00070,-0.60175]] },
+    H1: { nabec: [[0.25386,-0.04612,0],[-0.08499,0.15857,0],[0,0,0.30635]], ref: [[0.27190,-0.03873,0],[-0.06972,0.17364,0],[0.00071,0.00035,0.31504]] } },
+  { id: "L12e20", label: "L 12 · 20 Ha", desc: "L = 12 bohr, Ecut 20, Γ. Sternheimer NABEC vs length-gauge APT −∫ r δρ from the same response (= FD to 5 digits).", ref: "Length-gauge APT (≡ FD)",
+    O:  { nabec: [[-0.43878,-0.00000,-0.00000],[-0.00000,-0.27262,-0.00000],[-0.00000,0.00000,-0.60329]], ref: [[-0.50612,-0.00008,-0.00000],[0.00000,-0.32193,0.00000],[-0.00000,0.00003,-0.61141]] },
+    H1: { nabec: [[0.24161,-0.04522,-0.00000],[-0.09237,0.14419,-0.00000],[-0.00000,-0.00000,0.29511]], ref: [[0.25524,-0.04041,0.00000],[-0.07399,0.16246,0.00000],[0.00002,-0.00001,0.30695]] } },
+  { id: "L12e30", label: "L 12 · 30 Ha", desc: "L = 12 bohr, Ecut 30, Γ. Sternheimer NABEC vs length-gauge APT −∫ r δρ from the same response (= FD to 5 digits).", ref: "Length-gauge APT (≡ FD)",
+    O:  { nabec: [[-0.48232,-0.00000,-0.00000],[-0.00000,-0.32557,0.00000],[-0.00000,0.00000,-0.66216]], ref: [[-0.51335,-0.00009,0.00000],[-0.00000,-0.34295,-0.00000],[-0.00000,0.00000,-0.64487]] },
+    H1: { nabec: [[0.24615,-0.05552,0.00000],[-0.09257,0.15568,0.00000],[-0.00000,-0.00000,0.31429]], ref: [[0.25828,-0.05153,-0.00000],[-0.07846,0.17204,-0.00000],[0.00003,-0.00000,0.32324]] } },
+  { id: "L12e40", label: "L 12 · 40 Ha", desc: "L = 12 bohr, Ecut 40, Γ. Sternheimer NABEC vs length-gauge APT −∫ r δρ from the same response (= FD to 5 digits).", ref: "Length-gauge APT (≡ FD)",
+    O:  { nabec: [[-0.50524,0.00000,-0.00000],[-0.00000,-0.35069,-0.00000],[0.00000,-0.00000,-0.68696]], ref: [[-0.52710,-0.00008,-0.00000],[0.00000,-0.35726,0.00000],[0.00000,0.00000,-0.65930]] },
+    H1: { nabec: [[0.25649,-0.05372,0.00000],[-0.08621,0.16657,0.00000],[0.00000,0.00000,0.32346]], ref: [[0.26489,-0.05197,0.00000],[-0.07641,0.17903,0.00000],[0.00002,-0.00000,0.33031]] } },
+];
+const BOX = { x: [10, 12, 14, 16], y: [0.140, 0.067, 0.064, 0.064] };
+const CUT = { x: [20, 30, 40], y: [0.067, 0.031, 0.028] };
+const ASR = [
+  ["L 10, Ecut 20, Γ", 0.186, 0.013], ["L 10, Ecut 20, 2³", 0.046, 0.028], ["L 10, Ecut 20, 3³", 0.048, 0.029],
+  ["L 12, Ecut 20, Γ", 0.044, 0.004], ["L 14, Ecut 20, Γ", 0.047, 0.002], ["L 16, Ecut 20, Γ", 0.048, 0.002],
+  ["L 12, Ecut 30, Γ", 0.034, 0.003], ["L 12, Ecut 40, Γ", 0.040, 0.002]
+];
+const AX = ["x", "y", "z"];
+
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const fmt = v => (Math.abs(v) < 5e-5 ? "0" : (v >= 0 ? "+" : "−") + Math.abs(v).toFixed(3));
+const tip = document.getElementById("tip");
+function showTip(e, html) { tip.innerHTML = html; tip.hidden = false; moveTip(e); }
+function moveTip(e) {
+  const pad = 14, w = tip.offsetWidth, h = tip.offsetHeight;
+  let x = e.clientX + pad, y = e.clientY + pad;
+  if (x + w > innerWidth - 8) x = e.clientX - w - pad;
+  if (y + h > innerHeight - 8) y = e.clientY - h - pad;
+  tip.style.left = x + "px"; tip.style.top = y + "px";
+}
+function hideTip() { tip.hidden = true; }
+
+let current = "L10k2";
+try { const s = localStorage.getItem("wapt-setting"); if (s && SETTINGS.some(t => t.id === s)) current = s; } catch (e) {}
+
+const DMAX = 0.15;  // fixed Δ colour scale (e), shared by all settings
+function mix(a, b, t) {
+  const pa = a.match(/\w\w/g).map(h => parseInt(h, 16)), pb = b.match(/\w\w/g).map(h => parseInt(h, 16));
+  return "#" + pa.map((v, i) => Math.round(v + (pb[i] - v) * t).toString(16).padStart(2, "0")).join("");
+}
+function divColor(d) {
+  const t = Math.min(1, Math.abs(d) / DMAX);
+  return mix(css("--mid"), d < 0 ? css("--neg") : css("--pos"), Math.pow(t, 0.8));
+}
+
+function renderFacts() {
+  const lines = [
+    ["0.067 e", "largest gap, L 12 · Ecut 20"],
+    ["0.028 e", "largest gap, L 12 · Ecut 40"],
+    ["≤ 0.004", "FD sum-rule residual, L ≥ 12"],
+    ["5 digits", "length gauge = FD"]
+  ];
+  document.getElementById("facts").innerHTML = lines.map(([b, s]) => `<div class="fact"><b>${b}</b><span>${s}</span></div>`).join("");
+}
+
+function renderSeg() {
+  const seg = document.getElementById("settingSeg");
+  seg.innerHTML = SETTINGS.map(s => `<button type="button" id="set-${s.id}" data-id="${s.id}" aria-pressed="${s.id === current}">${s.label}</button>`).join("");
+  seg.querySelectorAll("button").forEach(b => b.addEventListener("click", () => {
+    current = b.dataset.id;
+    try { localStorage.setItem("wapt-setting", current); } catch (e) {}
+    renderAll();
+  }));
+}
+
+function gridHTML(M, kind, atom, setting) {
+  let h = `<div class="ax"></div>` + AX.map(a => `<div class="ax">β=${a}</div>`).join("");
+  for (let i = 0; i < 3; i++) {
+    h += `<div class="ax">${AX[i]}</div>`;
+    for (let j = 0; j < 3; j++) {
+      const v = M[i][j];
+      const cls = ["cell", i === j ? "diag" : "", Math.abs(v) < 5e-5 ? "zero" : "", kind === "d" ? "dcell" : ""].join(" ");
+      const style = kind === "d" ? ` style="background:${divColor(v)}"` : "";
+      const n = setting[atom].nabec[i][j], r = setting[atom].ref[i][j];
+      h += `<div class="${cls}"${style} data-tip="${atom} Z<sub>${AX[i]}${AX[j]}</sub><br><span class='mono'>NABEC ${fmt(n)} · ${setting.ref.startsWith("FD") ? "FD" : "length"} ${fmt(r)} · Δ ${fmt(n - r)}</span>">${fmt(v)}</div>`;
+    }
+  }
+  return `<div class="grid3">${h}</div>`;
+}
+
+function renderMaps() {
+  const s = SETTINGS.find(t => t.id === current);
+  document.getElementById("settingDesc").textContent = s.desc;
+  document.getElementById("refName").textContent = s.ref;
+  const refShort = s.ref.startsWith("FD") ? "FD" : "Length gauge";
+  const atoms = [["O", "O", "oxygen"], ["H1", "H₁", "hydrogen"]];
+  document.getElementById("atoms").innerHTML = atoms.map(([k, lab, name]) => {
+    const A = s[k], D = A.nabec.map((r, i) => r.map((v, j) => v - A.ref[i][j]));
+    const maxd = Math.max(...D.flat().map(Math.abs));
+    return `<div class="atom-row"><h3>${lab}<small>${name} · max |Δ| ${maxd.toFixed(3)} e</small></h3>
+      <div class="maps">
+        <div class="map"><div class="cap"><i style="background:var(--nabec)"></i>NABEC</div>${gridHTML(A.nabec, "n", k, s)}</div>
+        <div class="map"><div class="cap"><i style="background:var(--fd)"></i>${refShort}</div>${gridHTML(A.ref, "r", k, s)}</div>
+        <div class="map"><div class="cap">Δ = NABEC − ${refShort}</div>${gridHTML(D, "d", k, s)}</div>
+      </div></div>`;
+  }).join("");
+  document.querySelectorAll("#atoms .cell").forEach(c => {
+    c.addEventListener("mouseenter", e => showTip(e, c.dataset.tip));
+    c.addEventListener("mousemove", moveTip);
+    c.addEventListener("mouseleave", hideTip);
+  });
+  document.getElementById("scaleBar").style.background =
+    `linear-gradient(90deg, ${css("--neg")}, ${css("--mid")}, ${css("--pos")})`;
+  document.getElementById("scaleLab").textContent = `−${DMAX} … +${DMAX} e`;
+}
+
+function svgEl(tag, attrs, parent) {
+  const el = document.createElementNS("http://www.w3.org/2000/svg", tag);
+  for (const k in attrs) el.setAttribute(k, attrs[k]);
+  if (parent) parent.appendChild(el);
+  return el;
+}
+
+function renderDumbbell() {
+  const s = SETTINGS.find(t => t.id === current);
+  const rows = [];
+  for (const [k, lab] of [["O", "O"], ["H1", "H₁"]])
+    for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) {
+      const n = s[k].nabec[i][j], r = s[k].ref[i][j];
+      if (Math.abs(n) < 0.01 && Math.abs(r) < 0.01) continue;
+      rows.push({ lab: `${lab}  Z${AX[i]}${AX[j]}`, n, r });
+    }
+  const svg = document.getElementById("dumbbell");
+  svg.innerHTML = "";
+  const W = Math.max(560, Math.min(1020, svg.parentElement.clientWidth || 900));
+  const rowH = 26, top = 22, left = 86, right = 24, H = top + rows.length * rowH + 30;
+  svg.setAttribute("viewBox", `0 0 ${W} ${H}`); svg.setAttribute("width", W); svg.setAttribute("height", H);
+  const xmin = -0.8, xmax = 0.4;
+  const X = v => left + (v - xmin) / (xmax - xmin) * (W - left - right);
+  const ink2 = css("--ink-2"), grid = css("--grid"), rule = css("--rule");
+  for (let t = -0.8; t <= 0.4001; t += 0.2) {
+    const x = X(t);
+    svgEl("line", { x1: x, x2: x, y1: top - 6, y2: H - 26, stroke: Math.abs(t) < 1e-9 ? rule : grid, "stroke-width": 1 }, svg);
+    const tx = svgEl("text", { x, y: H - 10, "text-anchor": "middle", "font-size": 11, fill: ink2 }, svg);
+    tx.textContent = (t >= 0 ? "" : "−") + Math.abs(t).toFixed(1);
+  }
+  const cap = svgEl("text", { x: W - right, y: 12, "text-anchor": "end", "font-size": 11, fill: ink2 }, svg);
+  cap.textContent = "Z (e)";
+  rows.forEach((d, idx) => {
+    const y = top + idx * rowH + rowH / 2;
+    const lt = svgEl("text", { x: left - 10, y: y + 4, "text-anchor": "end", "font-size": 12, fill: css("--ink"), "font-family": "IBM Plex Mono, monospace" }, svg);
+    lt.textContent = d.lab;
+    svgEl("line", { x1: X(d.n), x2: X(d.r), y1: y, y2: y, stroke: ink2, "stroke-width": 2, "stroke-linecap": "round", opacity: 0.45 }, svg);
+    svgEl("circle", { cx: X(d.r), cy: y, r: 5, fill: css("--fd"), stroke: css("--ground"), "stroke-width": 2 }, svg);
+    svgEl("circle", { cx: X(d.n), cy: y, r: 5, fill: css("--nabec"), stroke: css("--ground"), "stroke-width": 2 }, svg);
+    const hit = svgEl("rect", { x: left, y: y - rowH / 2, width: W - left - right, height: rowH, fill: "transparent" }, svg);
+    const html = `${d.lab}<br><span class='mono'>NABEC ${fmt(d.n)}<br>${s.ref.startsWith("FD") ? "FD" : "length"} ${fmt(d.r)}<br>Δ ${fmt(d.n - d.r)}</span>`;
+    hit.addEventListener("mouseenter", e => showTip(e, html));
+    hit.addEventListener("mousemove", moveTip);
+    hit.addEventListener("mouseleave", hideTip);
+  });
+}
+
+function lineChart(id, data, xlab, xticks) {
+  const svg = document.getElementById(id);
+  svg.innerHTML = "";
+  const W = 460, H = 220, l = 46, r = 18, t = 16, b = 38;
+  svg.setAttribute("viewBox", `0 0 ${W} ${H}`); svg.style.width = "100%"; svg.style.maxWidth = W + "px"; svg.style.height = "auto";
+  const xmin = Math.min(...data.x), xmax = Math.max(...data.x);
+  const X = v => l + (v - xmin) / (xmax - xmin) * (W - l - r);
+  const Y = v => t + (1 - v / 0.16) * (H - t - b);
+  const ink2 = css("--ink-2"), grid = css("--grid"), c = css("--nabec");
+  [0, 0.04, 0.08, 0.12, 0.16].forEach(v => {
+    svgEl("line", { x1: l, x2: W - r, y1: Y(v), y2: Y(v), stroke: v === 0 ? css("--rule") : grid, "stroke-width": 1 }, svg);
+    const tx = svgEl("text", { x: l - 8, y: Y(v) + 4, "text-anchor": "end", "font-size": 11, fill: ink2 }, svg);
+    tx.textContent = v.toFixed(2);
+  });
+  xticks.forEach(v => {
+    const tx = svgEl("text", { x: X(v), y: H - b + 18, "text-anchor": "middle", "font-size": 11, fill: ink2 }, svg);
+    tx.textContent = v;
+  });
+  const xl = svgEl("text", { x: (l + W - r) / 2, y: H - 4, "text-anchor": "middle", "font-size": 11, fill: ink2 }, svg);
+  xl.textContent = xlab;
+  const yl = svgEl("text", { x: 12, y: t + 2, "font-size": 11, fill: ink2 }, svg);
+  yl.textContent = "e";
+  svgEl("path", { d: data.x.map((x, i) => (i ? "L" : "M") + X(x) + " " + Y(data.y[i])).join(" "), fill: "none", stroke: c, "stroke-width": 2, "stroke-linejoin": "round" }, svg);
+  data.x.forEach((x, i) => {
+    svgEl("circle", { cx: X(x), cy: Y(data.y[i]), r: 4.5, fill: c, stroke: css("--ground"), "stroke-width": 2 }, svg);
+    const lab = svgEl("text", { x: X(x), y: Y(data.y[i]) - 10, "text-anchor": "middle", "font-size": 11, fill: css("--ink"), "font-family": "IBM Plex Mono, monospace" }, svg);
+    lab.textContent = data.y[i].toFixed(3);
+    const hit = svgEl("circle", { cx: X(x), cy: Y(data.y[i]), r: 14, fill: "transparent" }, svg);
+    hit.addEventListener("mouseenter", e => showTip(e, `${xlab.split(" (")[0]} ${x}<br><span class='mono'>max |Δ| = ${data.y[i].toFixed(3)} e</span>`));
+    hit.addEventListener("mousemove", moveTip);
+    hit.addEventListener("mouseleave", hideTip);
+  });
+}
+
+function renderTables() {
+  document.getElementById("asrTable").innerHTML =
+    `<tr><th>Setting</th><th>NABEC</th><th>FD</th></tr>` +
+    ASR.map(([s, n, f]) => `<tr><td>${s}</td><td>${n.toFixed(3)}</td><td>${f.toFixed(3)}</td></tr>`).join("");
+  let h = `<tr><th>Setting</th><th>Atom</th><th>Method</th>` + ["xx","xy","xz","yx","yy","yz","zx","zy","zz"].map(c => `<th>Z${c}</th>`).join("") + `</tr>`;
+  for (const s of SETTINGS) for (const k of ["O", "H1"]) for (const [m, key] of [["NABEC", "nabec"], [s.ref.startsWith("FD") ? "FD" : "Length", "ref"]])
+    h += `<tr><td>${s.label}</td><td>${k === "H1" ? "H₁" : "O"}</td><td>${m}</td>` + s[k][key].flat().map(v => `<td>${fmt(v)}</td>`).join("") + `</tr>`;
+  document.getElementById("allTable").innerHTML = h;
+}
+
+function renderAll() {
+  document.querySelectorAll("#settingSeg button").forEach(b => b.setAttribute("aria-pressed", b.dataset.id === current));
+  renderMaps(); renderDumbbell();
+}
+renderFacts(); renderSeg(); renderAll(); renderTables();
+lineChart("chartL", BOX, "box side L (bohr)", BOX.x);
+lineChart("chartE", CUT, "cutoff Ecut (Ha)", CUT.x);
+addEventListener("resize", () => renderDumbbell());
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => { renderAll(); lineChart("chartL", BOX, "box side L (bohr)", BOX.x); lineChart("chartE", CUT, "cutoff Ecut (Ha)", CUT.x); });
+new MutationObserver(() => { renderAll(); lineChart("chartL", BOX, "box side L (bohr)", BOX.x); lineChart("chartE", CUT, "cutoff Ecut (Ha)", CUT.x); })
+  .observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+</script>

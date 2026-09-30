@@ -111,10 +111,16 @@ Not started (blocked on the H2O issue, see below). Au with 11 e⁻ is only in th
    **Localization** (`scripts/diag_water_gauge.jl`, L=12, Ecut 20, Γ, full diag, same H^τ):
    length-gauge SOS (r_nm) = −∫ r δρ exactly; velocity-gauge SOS (v_nm) differs.
 
+   Electronic part only (Z^el; add Z^ion = 6 for O, 1 for H to get the full tensor):
+
    | atom | Z^el_xx vel / len | Z^el_yy vel / len | Z^el_zz vel / len |
    |---|---|---|---|
    | O  | −6.4388 / −6.5061 | −6.2726 / −6.3219 | −6.6033 / −6.6114 |
    | H  | −0.7584 / −0.7448 | −0.8558 / −0.8375 | −0.7049 / −0.6931 |
+
+   Full Z (= Z^ion + Z^el), length gauge (= FD): O −0.506 / −0.322 / −0.611,
+   H +0.255 / +0.163 / +0.307 (diagonal). Velocity gauge: O −0.439 / −0.273 / −0.603,
+   H +0.242 / +0.144 / +0.295.
 
    So the whole discrepancy is ⟨m|v|n⟩ ≠ i(ε_m−ε_n)⟨m|r|n⟩ in the plane-wave
    discretization of a molecule in vacuum. The Γ/L=10 part is box dispersion (removed by

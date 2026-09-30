@@ -105,3 +105,22 @@ them as exact eigenpairs.
 - For a molecule in vacuum the velocity and length gauges disagree beyond k and box
   effects (RESULTS.md, open issue 1).
 - Au with 11 valence electrons: use `cp2k.nc.sr.lda.v0_1.semicore.gth` (largecore Au has 1 e⁻).
+
+## Operational notes (Phase 5)
+
+- **Unshifted even k-meshes in slabs:** a 2×2×1 mesh contains only time-reversal-invariant
+  points (Γ, M-type), where every band velocity vanishes, so D = D̃ = 0 identically
+  (`drude_weight` now warns). Use odd in-plane meshes (3×3, 5×5, …) for metals.
+- **Cost of a screened response in the metal slab:** ≈1780 s per displacement direction
+  (2×2 Au(111) 3 layers + 2 H2O, Ecut 20, 2×2 k, 32 threads, tol 1e-8) ≈ 4.4 SCFs.
+- **Memory:** H2O (L=12, Γ) peaks at 2.0 GB (20 Ha) / 2.4 GB (40 Ha) for the Sternheimer route,
+  of which ≈1.2 GB is the Julia/DFTK baseline; full diagonalization adds 16·N_G² per k-point
+  (4.8 GB at 7249 PW). `full_bands` keeps all k-points and is only for small validation cells.
+  `ScreenedPhonon` now stores only δV_ind and δρ per displacement (24 B × FFT points × 3).
+- **Cutoff units:** DFTK `Ecut` is the orbital cutoff in Ha; CP2K `CUTOFF` is the density-grid
+  cutoff in Ry. Equivalent: Ecut[Ha] ≈ CUTOFF[Ry]/8 (400 Ry ↔ 50 Ha).
+- **Shared NFS depot:** do not change `src/` while jobs run. Another job's recompilation can
+  replace a pkgimage a running job has memory-mapped → SIGBUS (likely cause of the first
+  slab-probe crash). Scripts outside `src/` can be copied freely.
+- **Au semicore GTH:** (Ω/π)D̃ ≈ 0.41 vs D ≈ 0.98 per atom (8³, T = 0.1); the NABEC sum rule
+  follows D̃, so the pseudopotential velocity term is large for Au (cf. arXiv:2503.18811).
