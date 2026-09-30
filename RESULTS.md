@@ -95,8 +95,25 @@ dependence. Use plane-wave pseudopotentials (PseudoDojo) for NABECs.
 
 ## Phase 5: Au(111)/water slab
 
-Not started (blocked on the H2O issue, see below). Au with 11 e⁻ is only in the
-`semicore` GTH-LDA family (`largecore` Au has Zion = 1); O and H are identical in both.
+In progress. Au with 11 e⁻ is only in the `semicore` GTH-LDA family (`largecore` Au has
+Zion = 1). All runs below use GTH semicore at Ecut 20 Ha; given the GTH findings for H2O,
+velocity-type numbers here (D, D̃, NABEC) must be re-checked with PseudoDojo.
+
+**fcc Au bulk** (`scripts/validate_au.jl`, Sternheimer route), sum rule Z = (Ω/π) D̃:
+
+| T (Ha) | k-mesh | Z | (Ω/π)D | (Ω/π)D̃ | Z − D̃ |
+|---|---|---|---|---|---|
+| 0.1 | 8³ / 12³ / 16³ | 0.403 / 0.433 / 0.430 | 0.980 / 1.041 / 1.035 | 0.409 / 0.439 / 0.436 | −0.006 each |
+| 0.03 | 12³ / 16³ / 20³ | 0.365 / 0.364 / 0.364 | 1.014 / 0.987 / 0.989 | 0.378 / 0.369 / 0.370 | −0.014 / −0.005 / −0.006 |
+
+The sum rule closes with D̃, but D̃ ≈ 0.37 vs D ≈ 0.99: a 0.62 e pseudopotential term per
+atom with GTH semicore Au.
+
+**Au(111)/H2O slab** (3 layers, 2×2, one flat H2O per side, inversion-symmetric, c = 42 bohr,
+Ecut 20, T = 0.03): 2×2 k (all time-reversal-invariant points → D = 0 identically, pipeline
+test only) and 3×3 k ((Ω/π)D = 0.948 / 0.919 / 0.000, D̃ = 0.472 / 0.484 / 0; D_zz = 0 ✓, the
+in-plane D is far from converged). Water NABECs pending. Cost: SCF ≈ 7–16 min, one screened
+response ≈ 30 min (2×2 k, 32 threads), Sternheimer NABEC stage > 5 h at tol 1e-9.
 
 ## Open issues
 
