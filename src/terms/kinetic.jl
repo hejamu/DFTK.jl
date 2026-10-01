@@ -109,3 +109,23 @@ function (blowup::BlowupAbinit)(y::T, Ecut) where {T}
         1/(x^2 * (3 + x - 6x^2 + 3x^2))
     end
 end
+
+# ∂/∂k_α of the kinetic block at fixed G set: (k+G)_α for the standard dispersion,
+# otherwise the derivative of the blown-up dispersion (by ForwardDiff).
+function ∂kH_operators(term::TermKinetic, basis::PlaneWaveBasis{T}, ik) where {T}
+    kin = only(t for t in basis.model.term_types if t isa Kinetic)
+    p = Gplusk_vectors_cart(basis, basis.kpoints[ik])
+    ntuple(3) do α
+        if kin.blowup isa BlowupIdentity
+            Diagonal(T(term.scaling_factor) .* map(pk -> pk[α], p))
+        else
+            eα = Vec3{T}(ntuple(i -> i == α, 3))
+            d = map(p) do pk
+                ForwardDiff.derivative(zero(T)) do ε
+                    kinetic_energy(kin.blowup, term.scaling_factor, basis.Ecut, [pk + ε * eα])[1]
+                end
+            end
+            Diagonal(map(x -> isnan(x) ? zero(x) : x, d))  # |k+G| = 0: derivative of a radial fn
+        end
+    end
+end

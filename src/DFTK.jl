@@ -245,6 +245,10 @@ export elastic_tensor
 include("postprocess/elastic.jl")
 export phonon_modes
 include("postprocess/phonon.jl")
+export compute_drude_weight
+include("postprocess/velocity.jl")
+export compute_nabec
+include("postprocess/nabec.jl")
 export refine_scfres
 export refine_energies
 export refine_forces
