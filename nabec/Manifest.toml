@@ -316,7 +316,7 @@ version = "0.3.3"
 
 [[deps.DFTK]]
 deps = ["AbstractFFTs", "Artifacts", "AtomsBase", "AtomsCalculators", "Brillouin", "Dates", "DftFunctionals", "DifferentiationInterface", "DocStringExtensions", "FFTW", "ForwardDiff", "GPUArraysCore", "Interpolations", "KrylovKit", "LOBPCGEigensolver", "Libxc", "LineSearches", "LinearAlgebra", "LinearMaps", "MPI", "Markdown", "Optim", "PkgVersion", "PrecompileTools", "Preferences", "Printf", "PseudoPotentialData", "PseudoPotentialIO", "Random", "Roots", "SparseArrays", "SpecialFunctions", "Spglib", "StaticArrays", "Statistics", "TimerOutputs", "Unitful", "UnitfulAtomic"]
-path = "/home/ctn2867/repos/DFTK.jl"
+path = ".."
 uuid = "acf6eb54-70d9-11e9-0013-234b7a5f5337"
 version = "0.8.0"
 
