@@ -19,18 +19,22 @@ T     = parse(Float64, get(ENV, "NABEC_T", "0.03"))
 which = get(ENV, "NABEC_ATOMS", "water")
 do_fd = get(ENV, "NABEC_FDZ", "0") == "1"
 do_ref = get(ENV, "NABEC_REF", "1") == "1"
-tag   = "E$(Int(Ecut))_k$(nk)_T$(T)_$(which)"
+family = Symbol(get(ENV, "NABEC_FAMILY", "gth"))
+nlat  = parse(Int, get(ENV, "NABEC_NLAT", "2"))          # lateral supercell n×n
+φ     = deg2rad(parse(Float64, get(ENV, "NABEC_PHI", "30")))   # in-plane water orientation
+tag   = "$(family)_n$(nlat)_E$(Int(Ecut))_k$(nk)_T$(T)_$(which)"
 mkpath("results")
 logio = open("results/slab_$tag.txt", "w")
 say(args...) = (println(args...); println(logio, args...); flush(logio); flush(stdout))
 fmt(Z) = join([@sprintf("% .4f % .4f % .4f", Z[α, :]...) for α = 1:3], "\n        ")
 stamp() = Dates.format(now(), "HH:MM:SS")
 
-basis = au111_water(; Ecut, kgrid=[nk, nk, 1], temperature=T)
+basis = au111_water(; Ecut, kgrid=[nk, nk, 1], temperature=T, family, n=nlat, φ)
 model = basis.model
 ws    = upper_water_indices(basis)
-atoms = which == "all" ? collect(1:length(model.positions)) : collect(ws)
-say("[$(stamp())] Au(111)/H2O slab: $(length(model.positions)) atoms, Ecut=$Ecut, k=$(nk)x$(nk)x1, T=$T, NABEC atoms: $which")
+atoms = which == "all" ? collect(1:length(model.positions)) :
+        which == "O"   ? [ws[1]] : collect(ws)
+say("[$(stamp())] Au(111)/H2O slab [$family, $(nlat)×$(nlat)]: $(length(model.positions)) atoms, Ecut=$Ecut, k=$(nk)x$(nk)x1, T=$T, NABEC atoms: $which")
 
 scfres = self_consistent_field(basis; tol=1e-9, mixing=KerkerMixing(), callback=identity)
 say("[$(stamp())] SCF done: n_iter=$(scfres.n_iter), εF=$(round(scfres.εF; digits=5))")
@@ -59,12 +63,12 @@ tol_stn = parse(Float64, get(ENV, "NABEC_TOL_STN", "1e-7"))
 res = nabec_sternheimer(scfres; atoms, phonon=ph, bands, tol_sternheimer=tol_stn)
 say("[$(stamp())] NABEC done")
 
-Zw = [res.Z[findfirst(==(i), atoms)] for i in ws]
-for (i, Z) in zip(ws, Zw)
+wcomp = [i for i in ws if i in atoms]
+Zw = [res.Z[findfirst(==(i), atoms)] for i in wcomp]
+for (i, Z) in zip(wcomp, Zw)
     say("  Z[$(element_symbol(model.atoms[i]))#$i] = ", fmt(Z))
 end
-Zmol = sum(Zw)
-say("  (c) molecule sum (slab)  = ", fmt(Zmol))
+length(Zw) == 3 && say("  (c) molecule sum (slab)  = ", fmt(sum(Zw)))
 if which == "all"
     Zsum = sum(res.Z)
     say("  (a) Σ_all Z diag = ", round.(diag(Zsum); digits=4),
@@ -75,7 +79,7 @@ say("  (b) (Ω/π)D_zz = ", round(D[3, 3]; digits=5))
 
 if do_fd
     h = 1e-3
-    Zfd = map(ws) do i
+    Zfd = map(wcomp) do i
         d = map((+1, -1)) do sgn
             positions = copy(model.positions)
             positions[i] = positions[i] + model.inv_lattice * [0, 0, sgn * h]
@@ -86,24 +90,24 @@ if do_fd
         end
         (d[1] - d[2]) / 2h
     end
-    for (j, i) in enumerate(ws)
+    for (j, i) in enumerate(wcomp)
         say(@sprintf("  (b) Z_zz[%s#%d]: NABEC % .4f   FD z-dipole % .4f   diff % .4f",
                      element_symbol(model.atoms[i]), i, Zw[j][3, 3], Zfd[j], Zw[j][3, 3] - Zfd[j]))
     end
 end
 
 if do_ref
-    bref  = au111_water(; Ecut, kgrid=[nk, nk, 1], with_gold=false)
+    bref  = au111_water(; Ecut, kgrid=[nk, nk, 1], with_gold=false, family, n=nlat, φ)
     sref  = self_consistent_field(bref; tol=1e-10, callback=identity)
-    wref  = 1:3    # upper molecule comes first when there is no gold
+    wref  = which == "O" ? [1] : collect(1:3)   # upper molecule comes first without gold
     rref  = nabec_sternheimer(sref; atoms=wref, tol_response=1e-10)
     say("[$(stamp())] vacuum reference (same cell, no Au):")
     for (j, i) in enumerate(wref)
         say("  Zvac[$(element_symbol(bref.model.atoms[i]))] = ", fmt(rref.Z[j]))
     end
-    say("  (c) molecule sum (vac)   = ", fmt(sum(rref.Z)))
+    length(wref) == 3 && say("  (c) molecule sum (vac)   = ", fmt(sum(rref.Z)))
     say("  (d) Z_slab − Z_vac:")
-    for j = 1:3
+    for j in eachindex(wref)
         say("      $(element_symbol(bref.model.atoms[j])): ", fmt(Zw[j] - rref.Z[j]))
     end
 end

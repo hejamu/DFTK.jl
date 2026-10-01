@@ -4,15 +4,32 @@ using PseudoPotentialData
 using LinearAlgebra
 
 const GTH_LDA_SC = PseudoFamily("cp2k.nc.sr.lda.v0_1.semicore.gth")
+const DOJO_LDA   = PseudoFamily("dojo.nc.sr.lda.v0_4_1.standard.upf")
 const A_AU = 7.67   # bohr, ≈ LDA lattice constant of Au (4.06 Å)
+
+# Pseudopotential family: :gth (cp2k GTH semicore, Au 11 e⁻) or :dojo (PseudoDojo NC, Au 19 e⁻).
+# GTH projectors are too hard for converged velocity-type quantities (NOTES.md); PseudoDojo
+# is used with NLCC switched off because DFTK's phonon δH does not include the core density.
+family_of(f) = f == :dojo ? DOJO_LDA : GTH_LDA_SC
+function lda_model(lattice, atoms, positions; family, temperature, smearing)
+    if family == :dojo
+        terms = [Kinetic(), AtomicLocal(), AtomicNonlocal(), Ewald(), PspCorrection(), Hartree(),
+                 Xc([:lda_x, :lda_c_pw]; use_nlcc=false)]
+        iszero(temperature) || push!(terms, Entropy())
+        Model(lattice, atoms, positions; terms, symmetries=false, spin_polarization=:none,
+              temperature, smearing)
+    else
+        model_DFT(lattice, atoms, positions; functionals=LDA(), symmetries=false,
+                  temperature, smearing)
+    end
+end
 
 """fcc Au, 1-atom primitive cell."""
 function gold(; Ecut=20, kgrid=[8, 8, 8], a=A_AU, temperature=0.03,
-              smearing=Smearing.Gaussian())
+              smearing=Smearing.Gaussian(), family=:gth)
     lattice = a / 2 * [[0 1 1.]; [1 0 1.]; [1 1 0.]]
-    Au = ElementPsp(:Au, GTH_LDA_SC)
-    model = model_DFT(lattice, [Au], [zeros(3)]; functionals=LDA(), symmetries=false,
-                      temperature, smearing)
+    Au = ElementPsp(:Au, family_of(family))
+    model = lda_model(lattice, [Au], [zeros(3)]; family, temperature, smearing)
     PlaneWaveBasis(model; Ecut, kgrid)
 end
 
@@ -70,18 +87,17 @@ function au111_water_geometry(; n=2, n_layers=3, a=A_AU, h_O=5.3, c=42.0, with_g
 end
 
 function au111_water(; Ecut=20, kgrid=[4, 4, 1], temperature=0.03,
-                     smearing=Smearing.Gaussian(), with_gold=true, kwargs...)
+                     smearing=Smearing.Gaussian(), with_gold=true, family=:gth, kwargs...)
     (; lattice, symbols, R) = au111_water_geometry(; with_gold, kwargs...)
     if !with_gold    # water-only reference: an insulator
         temperature, smearing = 0.0, Smearing.None()
     end
-    atoms = [ElementPsp(s, GTH_LDA_SC) for s in symbols]
+    atoms = [ElementPsp(s, family_of(family)) for s in symbols]
     # Slab centered at z = c/2, so the vacuum straddles the cell boundary (dipoles along z
     # are then well defined with the default box-center origin of `dipole_moment`).
     c = lattice[3, 3]
     positions = [mod.(lattice \ (r + [0, 0, c/2]), 1.0) for r in R]
-    model = model_DFT(lattice, atoms, positions; functionals=LDA(), symmetries=false,
-                      temperature, smearing)
+    model = lda_model(lattice, atoms, positions; family, temperature, smearing)
     PlaneWaveBasis(model; Ecut, kgrid)
 end
 

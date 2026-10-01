@@ -114,11 +114,23 @@ th:first-child, td:first-child { text-align: left; }
 
 <div class="page">
   <header>
-    <div class="eyebrow">naBEC · Phase 3 validation · isolated H₂O</div>
+    <div class="eyebrow">naBEC · Phase 3 validation · isolated H₂O · GTH runs below the resolution</div>
     <h1>Velocity-gauge NABEC vs finite-difference APT for water</h1>
-    <p class="lede">For an insulator the NABEC is the ordinary atomic polar tensor, so the Dreyer Eq. 7 result must match the finite-difference dipole derivative. The length-gauge APT (−∫ r δρ from the same screened response) reproduces FD to five digits; the velocity-gauge NABEC does not. LDA, GTH, cubic box of side L, Ecut in Ha. Charges in e; tensors Z[α, β] with α = dipole direction, β = displacement.</p>
+    <p class="lede">For an insulator the NABEC is the ordinary atomic polar tensor, so the Dreyer Eq. 7 result must match the finite-difference dipole derivative. With plane-wave pseudopotentials and a large enough box it does, to below 10⁻³ e. The GTH runs further down show why it first looked otherwise. LDA, cubic box of side L, Ecut in Ha. Charges in e; tensors Z[α, β] with α = dipole direction, β = displacement.</p>
     <div class="facts" id="facts"></div>
   </header>
+
+  <section>
+    <h2>Resolved: box size, hidden by GTH projector hardness</h2>
+    <p class="note">PseudoDojo NC LDA (NLCC off), Ecut 30 Ha (cutoff-converged), Γ only. Reference is the length-gauge APT, equal to the FD dipole APT to five digits.</p>
+    <div class="tablewrap"><table>
+      <tr><th>Box L (bohr)</th><th>max |Z<sub>NABEC</sub> − Z<sub>FD</sub>|</th><th>ΔO zz</th><th>Σ<sub>κ</sub>Z velocity</th><th>Σ<sub>κ</sub>Z length</th></tr>
+      <tr><td>12</td><td>0.047</td><td>−0.047</td><td>0.055</td><td>0.002</td></tr>
+      <tr><td>16</td><td>0.0038</td><td>−0.0038</td><td>0.0050</td><td>0.0002</td></tr>
+      <tr><td>20</td><td><b>0.0008</b></td><td>−0.0008</td><td>0.0013</td><td>0.0002</td></tr>
+    </table></div>
+    <p class="note">The Γ-point velocity gauge needs flat occupied bands, which for water takes L ≳ 16–20 bohr; the length gauge converges far earlier. With GTH (all settings below), O projectors are so hard in momentum space that velocity-type quantities do not converge up to 80 Ha and oscillate, which masked the box dependence.</p>
+  </section>
 
   <section>
     <div class="controls">
@@ -227,9 +239,9 @@ function divColor(d) {
 
 function renderFacts() {
   const lines = [
-    ["0.067 e", "largest gap, L 12 · Ecut 20"],
-    ["0.028 e", "largest gap, L 12 · Ecut 40"],
-    ["≤ 0.004", "FD sum-rule residual, L ≥ 12"],
+    ["0.0008 e", "largest gap, PseudoDojo · L 20"],
+    ["0.047 e", "same, L 12"],
+    ["≥ 0.04 e", "GTH gap up to 80 Ha"],
     ["5 digits", "length gauge = FD"]
   ];
   document.getElementById("facts").innerHTML = lines.map(([b, s]) => `<div class="fact"><b>${b}</b><span>${s}</span></div>`).join("");
