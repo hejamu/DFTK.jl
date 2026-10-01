@@ -90,6 +90,17 @@ compute_dynmat(::Term, ::AbstractBasis, ψ, occupation; kwargs...) = nothing
 # e^{iq·r} of the α coordinate of atom s.
 # δHψ[ik] is δH ψ_{k-q}, expressed in basis.kpoints[ik].
 compute_δHψ_αs(::Term, ::AbstractBasis, ψ, α, s, q; kwargs...) = nothing
+# Derivative of the k-point block with respect to the Cartesian k-coordinates at fixed
+# G-vector set: either nothing (no explicit k-dependence) or a 3-tuple of operators
+# (one per Cartesian direction α) that can be applied with `*` to orbitals of k-point `ik`.
+# Used for the velocity operator ∂H_k/∂k (see postprocess/velocity.jl).
+∂kH_operators(::Term, ::AbstractBasis, ik) = nothing
+for T in (:TermHubbard, :TermExactExchange, :TermMagnetic, :TermAnyonic)
+    @eval function ∂kH_operators(term::$T, ::AbstractBasis, ik)
+        throw(ArgumentError("The velocity operator ∂H/∂k is not implemented for " *
+                            "$(nameof(typeof(term)))"))
+    end
+end
 
 @doc raw"""
     compute_kernel(basis::PlaneWaveBasis; kwargs...)

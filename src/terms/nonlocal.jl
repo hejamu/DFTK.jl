@@ -171,7 +171,9 @@ function build_projection_vectors(basis::PlaneWaveBasis{T}, kpt::Kpoint,
     n_proj = count_n_proj(psps, psp_positions)
     n_G    = length(G_vectors(basis, kpt))
     G_plus_k = Gplusk_vectors(basis, kpt)
-    proj_vectors = zeros_like(G_plus_k, Complex{eltype(psp_positions[1][1])}, n_G, n_proj)
+    # Element type follows both positions and k-point (e.g. ForwardDiff duals in either)
+    TP = promote_type(eltype(psp_positions[1][1]), eltype(kpt.coordinate))
+    proj_vectors = zeros_like(G_plus_k, Complex{TP}, n_G, n_proj)
 
     # Compute the columns of proj_vectors = 1/√Ω \hat proj_i(k+G)
     # Since the proj_i are translates of each others, \hat proj_i(k+G) decouples as
@@ -395,5 +397,44 @@ function compute_δHψ_αs(::TermAtomicNonlocal, basis::PlaneWaveBasis{T}, ψ, �
         derivative_wrt_αs(model.positions, α, s) do positions_αs
             PDPψk(basis, positions_αs, psp_groups, kpt, ψ_minus_q[ik].kpt, ψ_minus_q[ik].ψk)
         end
+    end
+end
+
+# Velocity operator contribution ∂_k(P D P†) = (∂P) D P† + P D (∂P)† at fixed G set.
+# The k-dependence of the structure factor e^{-i(k+G)·R} cancels between bra and ket,
+# so differentiating the full projectors gives the same operator as differentiating only
+# the form factors.
+struct NonlocalVelocityOperator{TP, TD}
+    P::TP
+    ∂P::TP
+    D::TD
+end
+Base.:*(op::NonlocalVelocityOperator, ψ) = op.∂P * (op.D * (op.P' * ψ)) .+ op.P * (op.D * (op.∂P' * ψ))
+
+function ∂kH_operators(term::TermAtomicNonlocal, basis::PlaneWaveBasis{T}, ik) where {T}
+    op = term.ops[ik]
+    size(op.P, 2) == 0 && return nothing
+    model = basis.model
+    psp_groups    = [group for group in model.atom_groups
+                     if model.atoms[first(group)] isa ElementPsp]
+    psps          = [model.atoms[first(group)].psp for group in psp_groups]
+    psp_positions = [model.positions[group] for group in psp_groups]
+    kpt = basis.kpoints[ik]
+    projectors(kcoord) = build_projection_vectors(
+        basis, Kpoint(kpt.spin, kcoord, kpt.G_vectors, kpt.mapping, kpt.mapping_inv,
+                      kpt.mapping_device), psps, psp_positions)
+    ntuple(3) do α
+        δk = model.recip_lattice \ Vec3{T}(ntuple(i -> i == α, 3))  # Cartesian α in reduced coords
+        ∂P = ForwardDiff.derivative(ε -> projectors(kpt.coordinate + ε * δk), zero(T))
+        # ForwardDiff through |k+G| yields NaN at k+G = 0 (0·∞ in the radial chain rule):
+        # replace those rows by a central difference (projectors are smooth in k+G).
+        bad = findall(i -> any(isnan, @view ∂P[i, :]), 1:size(∂P, 1))
+        if !isempty(bad)
+            h = T(1e-5)
+            Pp = projectors(kpt.coordinate + h * δk)
+            Pm = projectors(kpt.coordinate - h * δk)
+            ∂P[bad, :] .= (Pp[bad, :] .- Pm[bad, :]) ./ 2h
+        end
+        NonlocalVelocityOperator(op.P, ∂P, op.D)
     end
 end
