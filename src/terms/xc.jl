@@ -506,7 +506,7 @@ function apply_kernel(term::TermXc, basis::PlaneWaveBasis{T}, δρ::AbstractArra
     end
 end
 
-"""
+@doc raw"""
 First-order change of the XC potential when the model core density (non-linear core
 correction) of atom `s` moves along the reduced coordinate `α` at fixed valence density `ρ`:
 ``δV_{xc} = K_{xc}[ρ + ρ_{\rm core}] \, ∂ρ_{\rm core}/∂x_{sα}``. Returns `nothing` if the
