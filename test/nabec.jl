@@ -115,7 +115,7 @@ end
 
     dojo = PseudoFamily("dojo.nc.sr.lda.v0_4_1.standard.upf")
     Na = ElementPsp(:Na, dojo); Cl = ElementPsp(:Cl, dojo)
-    @test DFTK.has_core_density(Na)
+    @test DFTK.has_core_density(Cl)   # Na has no model core in this family
     lattice = 10.40 / 2 * [[0 1 1.]; [1 0 1.]; [1 1 0.]]
     model(positions) = model_DFT(lattice, [Na, Cl], positions; functionals=LDA(),
                                  symmetries=false)
@@ -126,7 +126,8 @@ end
     Vxc(b) = DFTK.xc_potential_real(b.terms[ixc], b, nothing, nothing; ρ).potential
 
     h = 1e-4
-    for (α, s) in ((1, 1), (2, 2))
+    @test isnothing(DFTK.xc_core_displacement_potential(basis.terms[ixc], basis, 1, 1; ρ))
+    for (α, s) in ((1, 2), (3, 2))
         δV = DFTK.xc_core_displacement_potential(basis.terms[ixc], basis, α, s; ρ)
         Vh = map((h, -h)) do ε
             pos = deepcopy(positions)

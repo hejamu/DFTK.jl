@@ -521,8 +521,8 @@ function xc_core_displacement_potential(term::TermXc, basis::PlaneWaveBasis{T}, 
     isnothing(term.τcore) || error("Displaced core kinetic energy densities not implemented.")
 
     # ρ_core(G) = Σ_s e^{-2πi G·x_s} f_s(|G|) / √Ω, so ∂/∂x_sα brings down -2πi G_α.
-    Gs      = G_vectors(basis)
-    Gnorms  = norm.(G_vectors_cart(basis))
+    Gs      = vec(G_vectors(basis))
+    Gnorms  = vec(norm.(G_vectors_cart(basis)))
     ff      = atomic_density(element, Gnorms, CoreDensity())
     r       = basis.model.positions[s]
     δρcore_fourier = map(Gs, ff) do G, f
