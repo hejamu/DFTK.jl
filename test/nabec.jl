@@ -139,8 +139,13 @@ end
     end
 end
 
-@testitem "NABEC with NLCC: acoustic sum rule of an insulator" #=
-    =#    tags=[:slow, :dont_test_mpi] begin
+@testitem "NABEC with NLCC: translation identity of the screened potentials" #=
+    =#    tags=[:dont_test_mpi] begin
+    # Moving all atoms rigidly shifts the whole system, so per k-point
+    #   Σ_s δV_s = −∂V_tot/∂x_α,   V_tot = V_loc + V_H + V_xc[ρ + ρ_core].
+    # Without the displaced-core term this is violated at the 2e-2 level here; the remaining
+    # error is the XC grid aliasing. (The acoustic sum rule Σ_s Z_s = 0 itself holds only for
+    # converged k-meshes and is not a useful small test.)
     using DFTK
     using LinearAlgebra
     using PseudoPotentialData
@@ -148,13 +153,15 @@ end
     dojo = PseudoFamily("dojo.nc.sr.lda.v0_4_1.standard.upf")
     Na = ElementPsp(:Na, dojo); Cl = ElementPsp(:Cl, dojo)
     lattice = 10.40 / 2 * [[0 1 1.]; [1 0 1.]; [1 1 0.]]
-    model = model_DFT(lattice, [Na, Cl], [zeros(3), ones(3)/2]; functionals=LDA(),
+    model = model_DFT(lattice, [Na, Cl], [zeros(3), [0.5, 0.47, 0.52]]; functionals=LDA(),
                       symmetries=false)
-    scfres = self_consistent_field(PlaneWaveBasis(model; Ecut=20, kgrid=[2, 2, 2]);
-                                   tol=1e-10, callback=identity)
-    (; Z) = compute_nabec(scfres; tol=1e-10)
-    # Without the displaced core density this sum is off by several 0.01 e.
-    @test maximum(abs, Z[1] + Z[2]) < 2e-3
-    @test maximum(abs, Z[1] - Z[1][1, 1] * I) < 1e-6
-    @test 1.0 < Z[1][1, 1] < 1.2
+    basis  = PlaneWaveBasis(model; Ecut=20, kgrid=[2, 2, 2])
+    scfres = self_consistent_field(basis; tol=1e-11, callback=identity)
+    pot = DFTK.nabec_phonon_potentials(scfres; tol=1e-10)
+    Vtot_fourier = fft(basis, DFTK.total_local_potential(scfres.ham)[:, :, :, 1])
+    for α = 1:3
+        mdV = real(irfft(basis, map((G, v) -> -2π * im * G[α] * v,
+                                    G_vectors(basis), Vtot_fourier)))
+        @test norm(sum(pot.δV[α, :]) - mdV) < 3e-3 * norm(mdV)
+    end
 end
