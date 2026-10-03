@@ -101,9 +101,13 @@ in reduced coordinates.
     # JuliaMolSim/DFTK.jl#1310 and Dal Corso, https://arxiv.org/abs/1906.11673.
     @assert !any(breaks_time_reversal_symmetry, basis.model.term_types) (
         "Phonons are currently only implemented in the presence of time-reversal-symmetry.")
+    if any(t -> t isa TermXc && !isnothing(t.ρcore), basis.terms)
+        error("The dynamical matrix is not implemented for models using nonlinear core " *
+              "correction (missing second-order XC term).")
+    end
     n_atoms = length(basis.model.positions)
     responses = map(Iterators.product(1:3, 1:n_atoms)) do (α, s)
-        δHψs_αs = compute_δHψ_αs(basis, ψ, α, s, q)
+        δHψs_αs = compute_δHψ_αs(basis, ψ, α, s, q; ρ)
         solve_ΩplusK_split(ham, ρ, ψ, occupation, εF, eigenvalues, δHψs_αs; q, kwargs...)
     end
     δψs          = map(res -> res.δψ,          responses)
@@ -118,12 +122,13 @@ end
 
 """
 Get ``δH·ψ``, with ``δH`` the perturbation of the Hamiltonian with respect to a position
-displacement ``e^{iq·r}`` of the ``α`` coordinate of atom ``s``.
+displacement ``e^{iq·r}`` of the ``α`` coordinate of atom ``s``. The valence density `ρ`
+is needed for models with nonlinear core correction (displaced core density).
 `δHψ[ik]` is ``δH·ψ_{k-q}``, expressed in `basis.kpoints[ik]`.
 """
-@timing function compute_δHψ_αs(basis::PlaneWaveBasis, ψ, α, s, q)
+@timing function compute_δHψ_αs(basis::PlaneWaveBasis, ψ, α, s, q; ρ=nothing)
     α > basis.model.n_dim && return zero.(ψ)
-    δHψ_per_term = [compute_δHψ_αs(term, basis, ψ, α, s, q) for term in basis.terms]
+    δHψ_per_term = [compute_δHψ_αs(term, basis, ψ, α, s, q; ρ) for term in basis.terms]
     filter!(!isnothing, δHψ_per_term)
     isempty(δHψ_per_term) && return zero.(ψ)
     sum(δHψ_per_term)

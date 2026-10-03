@@ -506,6 +506,40 @@ function apply_kernel(term::TermXc, basis::PlaneWaveBasis{T}, δρ::AbstractArra
     end
 end
 
+"""
+First-order change of the XC potential when the model core density (non-linear core
+correction) of atom `s` moves along the reduced coordinate `α` at fixed valence density `ρ`:
+``δV_{xc} = K_{xc}[ρ + ρ_{\rm core}] \, ∂ρ_{\rm core}/∂x_{sα}``. Returns `nothing` if the
+term has no core density or atom `s` carries none. Only implemented for ``q = 0``.
+"""
+function xc_core_displacement_potential(term::TermXc, basis::PlaneWaveBasis{T}, α, s;
+                                        ρ, q=zero(Vec3{T})) where {T}
+    isnothing(term.ρcore) && return nothing
+    element = basis.model.atoms[s]
+    has_core_density(element) || return nothing
+    iszero(q) || error("Displaced core densities are only implemented for q = 0.")
+    isnothing(term.τcore) || error("Displaced core kinetic energy densities not implemented.")
+
+    # ρ_core(G) = Σ_s e^{-2πi G·x_s} f_s(|G|) / √Ω, so ∂/∂x_sα brings down -2πi G_α.
+    Gs      = G_vectors(basis)
+    Gnorms  = norm.(G_vectors_cart(basis))
+    ff      = atomic_density(element, Gnorms, CoreDensity())
+    r       = basis.model.positions[s]
+    δρcore_fourier = map(Gs, ff) do G, f
+        -2T(π) * im * G[α] * cis2pi(-dot(G, r)) * f / sqrt(basis.model.unit_cell_volume)
+    end
+    δρcore = ρ_from_total(basis, irfft(basis, reshape(δρcore_fourier, basis.fft_size)))
+    apply_kernel(term, basis, δρcore; ρ)  # includes scaling_factor
+end
+
+# δH from the displaced core density of atom s (NLCC). Needs the valence density `ρ`.
+function compute_δHψ_αs(term::TermXc, basis::PlaneWaveBasis, ψ, α, s, q; ρ=nothing, kwargs...)
+    (isnothing(term.ρcore) || !has_core_density(basis.model.atoms[s])) && return nothing
+    isnothing(ρ) && error("The XC perturbation of a displaced core density needs `ρ`.")
+    δV_αs = xc_core_displacement_potential(term, basis, α, s; ρ, q)
+    multiply_ψ_by_blochwave(basis, ψ, δV_αs, q)
+end
+
 function mergesum(nt1::NamedTuple{An}, nt2::NamedTuple{Bn}) where {An, Bn}
     all_keys = (union(An, Bn)..., )
     values = map(all_keys) do key

@@ -106,3 +106,54 @@ end
     @test abs(Z[1][1, 1] - D[1, 1]) > 5e-2     # the nonlocal correction is visible for Al
     @test maximum(abs, Z[1] - Z[1][1, 1] * I) < 1e-6
 end
+
+@testitem "NLCC: displaced core potential vs finite differences" #=
+    =#    tags=[:dont_test_mpi] begin
+    using DFTK
+    using LinearAlgebra
+    using PseudoPotentialData
+
+    dojo = PseudoFamily("dojo.nc.sr.lda.v0_4_1.standard.upf")
+    Na = ElementPsp(:Na, dojo); Cl = ElementPsp(:Cl, dojo)
+    @test DFTK.has_core_density(Na)
+    lattice = 10.40 / 2 * [[0 1 1.]; [1 0 1.]; [1 1 0.]]
+    model(positions) = model_DFT(lattice, [Na, Cl], positions; functionals=LDA(),
+                                 symmetries=false)
+    positions = [zeros(3), [0.5, 0.48, 0.5]]
+    basis = PlaneWaveBasis(model(positions); Ecut=15, kgrid=[1, 1, 1])
+    ρ = guess_density(basis)
+    ixc = findfirst(t -> t isa DFTK.TermXc, basis.terms)
+    Vxc(b) = DFTK.xc_potential_real(b.terms[ixc], b, nothing, nothing; ρ).potential
+
+    h = 1e-4
+    for (α, s) in ((1, 1), (2, 2))
+        δV = DFTK.xc_core_displacement_potential(basis.terms[ixc], basis, α, s; ρ)
+        Vh = map((h, -h)) do ε
+            pos = deepcopy(positions)
+            pos[s] = pos[s] + ε * Vector(I[1:3, α])
+            Vxc(PlaneWaveBasis(model(pos); Ecut=15, kgrid=[1, 1, 1], basis.fft_size))
+        end
+        δV_fd = (Vh[1] - Vh[2]) / 2h
+        @test norm(δV - δV_fd) < 1e-6 * norm(δV_fd)
+    end
+end
+
+@testitem "NABEC with NLCC: acoustic sum rule of an insulator" #=
+    =#    tags=[:slow, :dont_test_mpi] begin
+    using DFTK
+    using LinearAlgebra
+    using PseudoPotentialData
+
+    dojo = PseudoFamily("dojo.nc.sr.lda.v0_4_1.standard.upf")
+    Na = ElementPsp(:Na, dojo); Cl = ElementPsp(:Cl, dojo)
+    lattice = 10.40 / 2 * [[0 1 1.]; [1 0 1.]; [1 1 0.]]
+    model = model_DFT(lattice, [Na, Cl], [zeros(3), ones(3)/2]; functionals=LDA(),
+                      symmetries=false)
+    scfres = self_consistent_field(PlaneWaveBasis(model; Ecut=20, kgrid=[2, 2, 2]);
+                                   tol=1e-10, callback=identity)
+    (; Z) = compute_nabec(scfres; tol=1e-10)
+    # Without the displaced core density this sum is off by several 0.01 e.
+    @test maximum(abs, Z[1] + Z[2]) < 2e-3
+    @test maximum(abs, Z[1] - Z[1][1, 1] * I) < 1e-6
+    @test 1.0 < Z[1][1, 1] < 1.2
+end

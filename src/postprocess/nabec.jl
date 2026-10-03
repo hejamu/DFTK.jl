@@ -5,7 +5,8 @@
 #     − Im Σ_k w_k Σ_{n≠m} (f_n − f_m) / [(ε_n − ε_m)(ε_n − ε_m + iη)] v^α_nm H^{τκβ}_mn
 #
 # with v^α = ∂H_k/∂k_α (unscreened) and H^τ the screened first-order phonon Hamiltonian at
-# q = 0 (bare local + nonlocal derivative + self-consistent δV_Hxc). For insulators this is
+# q = 0 (bare local + nonlocal derivative + displaced core density in V_xc for NLCC
+# + self-consistent δV_Hxc). For insulators this is
 # the ordinary (Berry-phase) Born effective charge; for metals the intraband (Drude) term is
 # excluded and Σ_κ Z*_κ = (Ω/π) D̃ (see `compute_drude_weight`).
 #
@@ -30,13 +31,22 @@ function nabec_phonon_potentials(scfres; atoms=eachindex(scfres.basis.model.posi
     mixing = something(mixing, is_metal ? KerkerMixing() : SimpleMixing())
     atoms = collect(atoms)
     q0 = zero(Vec3{eltype(basis)})
-    δVbare = [derivative_wrt_αs(basis.model.positions, α, s) do positions_αs
-                  compute_local_potential(basis; positions=positions_αs)
-              end for α = 1:3, s in atoms]
+    xc_terms = filter(t -> t isa TermXc, basis.terms)
+    δVbare = map(Iterators.product(1:3, atoms)) do (α, s)
+        δVloc = derivative_wrt_αs(basis.model.positions, α, s) do positions_αs
+            compute_local_potential(basis; positions=positions_αs)
+        end
+        # Nonlinear core correction: the core density moves rigidly with the atom
+        for term in xc_terms
+            δVcore = xc_core_displacement_potential(term, basis, α, s; ρ=scfres.ρ)
+            isnothing(δVcore) || (δVloc = δVloc .+ δVcore[:, :, :, 1])
+        end
+        δVloc
+    end
     δV = similar(δVbare)
     δρ = Matrix{Any}(undef, size(δVbare))
     for (is, s) in enumerate(atoms), α = 1:3
-        δHextψ = compute_δHψ_αs(basis, scfres.ψ, α, s, q0)
+        δHextψ = compute_δHψ_αs(basis, scfres.ψ, α, s, q0; scfres.ρ)
         res = solve_ΩplusK_split(scfres, δHextψ; tol, verbose, mixing, kwargs...)
         δV[α, is] = δVbare[α, is] .+ res.δVind[:, :, :, 1]
         δρ[α, is] = res.δρ
