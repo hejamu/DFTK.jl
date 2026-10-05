@@ -123,8 +123,8 @@ Keyword arguments:
   `tol_bands` control the Sternheimer solves and the band diagonalization.
 
 Requirements and caveats: `symmetries=false`; no spin polarization; no Hubbard, exact
-exchange or magnetic terms; nonlinear core corrections are not included in the phonon
-response. Velocity-type quantities need pseudopotentials that converge in plane waves:
+exchange or magnetic terms. Nonlinear core corrections are supported: the displaced core
+density enters the phonon perturbation (see `xc_core_displacement_potential`). Velocity-type quantities need pseudopotentials that converge in plane waves:
 very hard projectors (e.g. GTH for O) converge extremely slowly with `Ecut`.
 """
 function compute_nabec(scfres; atoms=eachindex(scfres.basis.model.positions),
