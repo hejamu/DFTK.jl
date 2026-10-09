@@ -165,3 +165,28 @@ end
         @test norm(sum(pot.δV[α, :]) - mdV) < 3e-3 * norm(mdV)
     end
 end
+
+@testitem "NABEC: field-response route agrees with phonon route" #=
+    =#    tags=[:slow, :dont_test_mpi] setup=[NabecSystems] begin
+    using DFTK
+    using LinearAlgebra
+    using PseudoPotentialData
+    using .NabecSystems: silicon, aluminium
+
+    dojo = PseudoFamily("dojo.nc.sr.lda.v0_4_1.standard.upf")
+    Na = ElementPsp(:Na, dojo); Cl = ElementPsp(:Cl, dojo)
+    lattice = 10.40 / 2 * [[0 1 1.]; [1 0 1.]; [1 1 0.]]
+    nacl = PlaneWaveBasis(model_DFT(lattice, [Na, Cl], [zeros(3), [0.5, 0.47, 0.52]];
+                                    functionals=LDA(), symmetries=false);
+                          Ecut=15, kgrid=[2, 2, 2])
+    for (name, basis) in (("Si", silicon(; kgrid=[2, 2, 2])),
+                          ("Al", aluminium(; kgrid=[4, 4, 4], temperature=0.05)),
+                          ("NaCl (NLCC)", nacl))
+        scfres = self_consistent_field(basis; tol=1e-11, callback=identity)
+        Zph = compute_nabec(scfres; tol=1e-10).Z
+        Zfd = compute_nabec_field(scfres; tol=1e-10).Z
+        err = maximum(maximum(abs, a - b) for (a, b) in zip(Zph, Zfd))
+        @info "field vs phonon route" name err
+        @test err < 1e-5
+    end
+end

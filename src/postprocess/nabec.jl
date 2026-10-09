@@ -14,6 +14,8 @@
 # all partially occupied ones) and its complement Q (f = 0). For η → 0, pairing (n,m),(m,n):
 #   Z^el = −Σ_k w_k [ Σ_{n≠m∈P} (f_n−f_m)/(ε_n−ε_m)² Im M_nm + 2 Σ_{n∈P} f_n Im⟨δ⊥v u_n|δ⊥τ u_n⟩ ]
 # with M_nm = v_nm H^τ_mn and |δ⊥X u_n⟩ = −Q (H − ε_n)⁻¹ Q X|u_n⟩ from a Sternheimer solve.
+# The Q term is evaluated as 2 Σ f_n Im⟨w_n|H^τ u_n⟩ with w_n = δ⊥(δ⊥v u_n), so the number of
+# Sternheimer solves does not grow with the number of atoms.
 
 """
 Screened first-order local potentials of the phonon perturbation at q = 0, for
@@ -165,15 +167,17 @@ function compute_nabec(scfres; atoms=eachindex(scfres.basis.model.positions),
         v   = velocity_operators(basis, ik)
         vψ  = [v[α](ψO) for α = 1:3]
         A   = [ψP' * vψ[α] for α = 1:3]
-        δ⊥v = [δ⊥(vψ[α]) for α = 1:3]
+        # ⟨δ⊥v u|δ⊥τ u⟩ = ⟨w|H^τ u⟩ with w = Q(H-ε)⁻¹Q(H-ε)⁻¹Q v u = δ⊥(δ⊥v), since the projected
+        # resolvent is Hermitian: two Sternheimer solves per band for the velocity replace one
+        # per band and phonon perturbation.
+        w   = [δ⊥(δ⊥(vψ[α])) for α = 1:3]
         for ia in eachindex(atoms)
             Hτψ = apply_phonon_hamiltonian(basis, potentials, ik, ψO, ia)
             for β = 1:3
-                B   = ψP' * Hτψ[β]
-                δ⊥τ = δ⊥(Hτψ[β])
+                B = ψP' * Hτψ[β]
                 for α = 1:3
                     SP = nabec_pair_sum(model, ε, O, εF, A[α], B; degeneracy_tol)
-                    SQ = 2 * sum(f[O[j]] * imag(dot(δ⊥v[α][:, j], δ⊥τ[:, j]))
+                    SQ = 2 * sum(f[O[j]] * imag(dot(w[α][:, j], Hτψ[β][:, j]))
                                  for j in eachindex(O))
                     Zel[ia][α, β] -= basis.kweights[ik] * (SP + SQ)
                 end
@@ -222,4 +226,171 @@ function compute_nabec_sos(scfres; atoms=eachindex(scfres.basis.model.positions)
     Z_electronic = [mpi_sum(Z, basis.comm_kpts) for Z in Zel]
     Z_ionic = [charge_ionic(model.atoms[s]) * Matrix{T}(I, 3, 3) for s in atoms]
     (; Z=Z_ionic .+ Z_electronic, Z_electronic, Z_ionic, atoms, potentials)
+end
+
+"""
+Bare (unscreened) first-order phonon potentials at q = 0: the local-potential derivative plus,
+for models with nonlinear core correction, the displaced-core XC term. Same layout as
+[`nabec_phonon_potentials`](@ref) (with `δV = δVbare`), but without any response solve.
+"""
+function nabec_bare_potentials(scfres; atoms=eachindex(scfres.basis.model.positions))
+    basis = scfres.basis
+    atoms = collect(atoms)
+    xc_terms = filter(t -> t isa TermXc, basis.terms)
+    δVbare = map(Iterators.product(1:3, atoms)) do (α, s)
+        δVloc = derivative_wrt_αs(basis.model.positions, α, s) do positions_αs
+            compute_local_potential(basis; positions=positions_αs)
+        end
+        for term in xc_terms
+            δVcore = xc_core_displacement_potential(term, basis, α, s; ρ=scfres.ρ)
+            isnothing(δVcore) || (δVloc = δVloc .+ δVcore[:, :, :, 1])
+        end
+        δVloc
+    end
+    (; atoms, δV=δVbare, δVbare, δρ=nothing)
+end
+
+# Pair matrix M of the explicit band space P: Σ_{n≠m} F_nm v_nm X_mn = Σ_mn M[m, n] X[m, n]
+# with F_nm = (f_n - f_m) / (ε_n - ε_m)² (Drude pairs excluded), restricted to pairs with at
+# least one occupied band, as in `nabec_pair_sum`. A = ψP' v ψ_O.
+function nabec_pair_matrix(model, ε, O, εF, A; degeneracy_tol)
+    N = length(ε)
+    M = zeros(complex(eltype(ε)), N, N)
+    function weight(n, m)
+        Δ = ε[n] - ε[m]
+        abs(Δ) < degeneracy_tol && return zero(eltype(ε))
+        filled_occupation(model) *
+            Smearing.occupation_divided_difference(model.smearing, ε[n], ε[m], εF,
+                                                   model.temperature) / Δ
+    end
+    for (jn, n) in enumerate(O), m = 1:N
+        M[m, n] = weight(n, m) * conj(A[m, jn])          # v_nm = conj(⟨m|v|n⟩)
+    end
+    for n in setdiff(1:N, O), (jm, m) in enumerate(O)
+        M[m, n] = weight(n, m) * A[n, jm]                # v_nm = ⟨n|v|m⟩
+    end
+    M
+end
+
+@doc raw"""
+    compute_nabec_field(scfres; atoms, n_bands, tol=1e-8, kwargs...)
+
+Same quantity as [`compute_nabec`](@ref), evaluated with the self-consistent response to the
+velocity ("field") perturbation instead of one screened phonon response per atom and
+direction (interchange theorem). Splitting ``H^τ = H^τ_{\rm b} + K δρ_τ`` with
+``δρ_τ = (1-χ_0K)^{-1}χ_0 H^τ_{\rm b}`` and using the symmetry of ``χ_0`` and ``K``,
+```math
+Z^{\rm el}_{κ,αβ} = B(v^α, H^{τ_{κβ}}_{\rm b}) + \operatorname{Tr}\big[γ^{(1)}[δV^α]\, H^{τ_{κβ}}_{\rm b}\big],
+\qquad δV^α = K\,(1-χ_0K)^{-1}\,\tilde ρ^α ,
+```
+where ``B`` is the band sum of Eq. (7) with the bare phonon Hamiltonian,
+``\tilde ρ^α(r) = -\operatorname{Im}\sum_{n≠m}F_{nm}v^α_{nm}ψ_m^*(r)ψ_n(r)`` and ``γ^{(1)}[δV]``
+the (static, non-self-consistent) first-order density matrix of the potential ``δV``. The
+cost is three screened responses plus band-wise Sternheimer solves for the velocity,
+independent of the number of atoms; each atom only needs its bare ``H^τ``.
+"""
+function compute_nabec_field(scfres; atoms=eachindex(scfres.basis.model.positions),
+                             n_bands=nothing, tol=1e-8, tol_sternheimer=tol/10,
+                             tol_bands=tol/10, degeneracy_tol=1e-6,
+                             occupation_threshold=1e-12, maxiter_sternheimer=500,
+                             mixing=nothing, verbose=false)
+    basis = scfres.basis
+    model = basis.model
+    T = eltype(basis)
+    @assert length(basis.symmetries) == 1 "NABECs require symmetries=false"
+    @assert model.n_spin_components == 1 "Spin-polarized case not implemented"
+    atoms = collect(atoms)
+    εF = scfres.εF
+    bare = nabec_bare_potentials(scfres; atoms)
+
+    n_occ = maximum(count(>(occupation_threshold), fk) for fk in scfres.occupation)
+    n_bands = something(n_bands, n_occ + max(8, n_occ ÷ 4))
+    diag = diagonalize_all_kblocks(lobpcg_hyper, scfres.ham, n_bands + 4;
+                                   tol=tol_bands, miniter=1, maxiter=400)
+    diag.converged || @warn "Band diagonalization for NABECs not converged"
+
+    # 1. Band sum with the bare phonon Hamiltonian, and the source densities ρ̃^α
+    Zel = [zeros(T, 3, 3) for _ in atoms]
+    ψ_src  = [[similar(diag.X[ik], 0, 0) for ik in eachindex(basis.kpoints)] for _ = 1:3]
+    δψ_src = deepcopy(ψ_src)
+    occ_src = [[zeros(T, 0) for _ in eachindex(basis.kpoints)] for _ = 1:3]
+    for (ik, kpt) in enumerate(basis.kpoints)
+        ψP = diag.X[ik][:, 1:n_bands]
+        ε  = diag.λ[ik][1:n_bands]
+        f  = filled_occupation(model) .*
+             Smearing.occupation.(model.smearing, (ε .- εF) ./ model.temperature)
+        O  = findall(>(occupation_threshold), f)
+        maximum(O) < n_bands || error("n_bands too small: all bands of P are occupied")
+        ψO = ψP[:, O]
+        Hk = scfres.ham.blocks[ik]
+        no_extra = similar(ψP, size(ψP, 1), 0)
+        δ⊥(rhs) = sternheimer_solver(Hk, ψP, ε[O], rhs; tol=tol_sternheimer,
+                                     ψk_extra=no_extra, Hψk_extra=no_extra,
+                                     εk_extra=similar(ε, 0), maxiter=maxiter_sternheimer).δψk
+        v  = velocity_operators(basis, ik)
+        vψ = [v[α](ψO) for α = 1:3]
+        A  = [ψP' * vψ[α] for α = 1:3]
+        w  = [δ⊥(δ⊥(vψ[α])) for α = 1:3]                 # Q(H-ε)⁻²Q v u_n
+        for ia in eachindex(atoms)
+            Hτψ = apply_phonon_hamiltonian(basis, bare, ik, ψO, ia; screened=false)
+            for β = 1:3
+                B = ψP' * Hτψ[β]
+                for α = 1:3
+                    SP = nabec_pair_sum(model, ε, O, εF, A[α], B; degeneracy_tol)
+                    SQ = 2 * sum(f[O[j]] * imag(dot(w[α][:, j], Hτψ[β][:, j]))
+                                 for j in eachindex(O))
+                    Zel[ia][α, β] -= basis.kweights[ik] * (SP + SQ)
+                end
+            end
+        end
+        # ρ̃^α = -Im Σ_mn M_mn ψ_m^* ψ_n (P pairs) + 2 Σ_n f_n Im ψ_n^* w_n (Q part), written in
+        # the form Σ_j occ_j 2Re ψ_j^* δψ_j of `compute_δρ`.
+        for α = 1:3
+            M = nabec_pair_matrix(model, ε, O, εF, A[α]; degeneracy_tol)
+            ψ_src[α][ik]   = hcat(ψP, ψO)
+            δψ_src[α][ik]  = hcat((im / 2) .* (ψP * transpose(M)), -im .* w[α])
+            occ_src[α][ik] = vcat(ones(T, n_bands), f[O])
+        end
+    end
+    ρ̃ = [compute_δρ(basis, ψ_src[α], δψ_src[α], occ_src[α]) for α = 1:3]
+    ψ_src = δψ_src = nothing
+
+    # 2. Screened field responses δV^α = K (1 - χ0 K)⁻¹ ρ̃^α and their density matrices γ⁽¹⁾
+    is_metal = !is_effective_insulator(basis, scfres.eigenvalues, εF)
+    mixing = something(mixing, is_metal ? KerkerMixing() : SimpleMixing())
+    bandtolalg = BandtolBalanced(scfres)
+    ε_adj = DielectricAdjoint(scfres; bandtolalg)
+    ρ = scfres.ρ
+    precon = FunctionPreconditioner() do Pδρ, δρ
+        Pδρ .= vec(mix_density(mixing, basis, reshape(δρ, size(ρ)); ham=scfres.ham, basis,
+                               ρin=ρ, εF, scfres.eigenvalues, scfres.ψ))
+    end
+    responses = map(1:3) do α
+        info = inexact_gmres(ε_adj, vec(ρ̃[α]); tol, precon, krylovdim=20, maxiter=100, s=100,
+                             callback=identity)
+        info.converged || @warn "Field response not converged" α
+        δV = apply_kernel(basis, reshape(info.x, size(ρ)); ρ)
+        verbose && @info "field response α=$α: $(info.n_iter) GMRES iterations"
+        apply_χ0_4P(scfres.ham, scfres.ψ, scfres.occupation, εF, scfres.eigenvalues,
+                    multiply_ψ_by_blochwave(basis, scfres.ψ, δV, zero(Vec3{T}));
+                    occupation_threshold=scfres.occupation_threshold, bandtolalg,
+                    tol=tol / 10, maxiter=maxiter_sternheimer)
+    end
+
+    # 3. Tr[γ⁽¹⁾ H_b] = Σ_k w_k Σ_n [δocc_n ⟨ψ_n|H_b|ψ_n⟩ + 2 occ_n Re⟨δψ_n|H_b ψ_n⟩]
+    for (ik, kpt) in enumerate(basis.kpoints), ia in eachindex(atoms)
+        ψk  = scfres.ψ[ik]
+        occ = scfres.occupation[ik]
+        Hτψ = apply_phonon_hamiltonian(basis, bare, ik, ψk, ia; screened=false)
+        for α = 1:3, β = 1:3
+            δocc, δψk = responses[α].δoccupation[ik], responses[α].δψ[ik]
+            tr_γH = sum(δocc[n] * real(dot(ψk[:, n], Hτψ[β][:, n])) +
+                        2 * occ[n] * real(dot(δψk[:, n], Hτψ[β][:, n]))
+                        for n in axes(ψk, 2))
+            Zel[ia][α, β] += basis.kweights[ik] * tr_γH
+        end
+    end
+    Z_electronic = [mpi_sum(Z, basis.comm_kpts) for Z in Zel]
+    Z_ionic = [charge_ionic(model.atoms[s]) * Matrix{T}(I, 3, 3) for s in atoms]
+    (; Z=Z_ionic .+ Z_electronic, Z_electronic, Z_ionic, atoms)
 end

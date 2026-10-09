@@ -248,6 +248,7 @@ include("postprocess/phonon.jl")
 export compute_drude_weight
 include("postprocess/velocity.jl")
 export compute_nabec
+export compute_nabec_field
 include("postprocess/nabec.jl")
 export refine_scfres
 export refine_energies
