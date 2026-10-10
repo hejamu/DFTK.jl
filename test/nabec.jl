@@ -190,3 +190,34 @@ end
         @test err < 1e-5
     end
 end
+
+@testitem "NABEC: per-atom bare phonon derivatives vs automatic differentiation" #=
+    =#    tags=[:dont_test_mpi] begin
+    using DFTK
+    using LinearAlgebra
+    using PseudoPotentialData
+
+    dojo = PseudoFamily("dojo.nc.sr.lda.v0_4_1.standard.upf")
+    Na = ElementPsp(:Na, dojo); Cl = ElementPsp(:Cl, dojo)
+    lattice = 10.40 / 2 * [[0 1 1.]; [1 0 1.]; [1 1 0.]]
+    model = model_DFT(lattice, [Na, Cl, Cl], [zeros(3), [0.5, 0.47, 0.52], [0.21, 0.3, 0.77]];
+                      functionals=LDA(), symmetries=false)
+    basis = PlaneWaveBasis(model; Ecut=12, kgrid=ExplicitKpoints([[0.1, 0.2, -0.15]]))
+    scfres = self_consistent_field(basis; tol=1e-8, callback=identity)
+    ψk = scfres.ψ[1]
+    bare = DFTK.nabec_bare_potentials(scfres)
+    xc = only(filter(t -> t isa DFTK.TermXc, basis.terms))
+    for s in 1:3, α in 1:3
+        # nonlocal: atom-local projectors vs AD through all projectors
+        a = DFTK.apply_nonlocal_displacement_derivative(basis, 1, α, s, ψk)
+        b = DFTK.apply_nonlocal_displacement_derivative_ad(basis, 1, α, s, ψk)
+        @test norm(a - b) < 1e-10 * max(1, norm(b))
+        # local: analytic structure-factor derivative vs AD of compute_local_potential
+        Vad = DFTK.derivative_wrt_αs(model.positions, α, s) do pos
+            DFTK.compute_local_potential(basis; positions=pos)
+        end
+        core = DFTK.xc_core_displacement_potential(xc, basis, α, s; ρ=scfres.ρ)
+        isnothing(core) || (Vad = Vad .+ core[:, :, :, 1])
+        @test norm(bare.δVbare[α, s] - Vad) < 1e-10 * max(1, norm(Vad))
+    end
+end

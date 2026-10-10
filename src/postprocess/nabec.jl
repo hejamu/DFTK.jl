@@ -56,8 +56,40 @@ function nabec_phonon_potentials(scfres; atoms=eachindex(scfres.basis.model.posi
     (; atoms, δV, δVbare, δρ=identity.(δρ))
 end
 
+# Column range of atom s in the projector matrix of the AtomicNonlocal term (pseudopotential
+# groups in model order, atoms within a group, count_n_proj(psp) columns each).
+function nonlocal_projector_columns(model, s)
+    offset = 0
+    for group in model.atom_groups
+        element = model.atoms[first(group)]
+        element isa ElementPsp || continue
+        n = count_n_proj(element.psp)
+        for i in group
+            i == s && return offset .+ (1:n)
+            offset += n
+        end
+    end
+    nothing
+end
+
 # Bare nonlocal ∂V_nl/∂x_α (reduced coordinates) of atom s applied to ψk at k-point ik.
+# Only atom s's projectors depend on x_s, through the structure factor e^{-2πi(k+G)·x_s}, so
+# ∂P_s = -2πi (k+G)_α P_s and ∂(P D P') = ∂P_s D_s P_s' + P_s D_s ∂P_s'. Cost O(N_PW n_proj(s)).
 function apply_nonlocal_displacement_derivative(basis, ik, α, s, ψk)
+    iterm = findfirst(t -> t isa TermAtomicNonlocal, basis.terms)
+    isnothing(iterm) && return zero(ψk)
+    cols = nonlocal_projector_columns(basis.model, s)
+    isnothing(cols) && return zero(ψk)
+    op = basis.terms[iterm].ops[ik]
+    Ps = op.P[:, cols]
+    Ds = op.D[cols, cols]
+    T  = eltype(basis)
+    ∂Ps = map(p -> -2T(π) * im * p[α], Gplusk_vectors(basis, basis.kpoints[ik])) .* Ps
+    ∂Ps * (Ds * (Ps' * ψk)) .+ Ps * (Ds * (∂Ps' * ψk))
+end
+
+# Reference implementation by automatic differentiation through all projectors (tests only).
+function apply_nonlocal_displacement_derivative_ad(basis, ik, α, s, ψk)
     model = basis.model
     psp_groups = [group for group in model.atom_groups
                   if model.atoms[first(group)] isa ElementPsp]
@@ -66,6 +98,13 @@ function apply_nonlocal_displacement_derivative(basis, ik, α, s, ψk)
     derivative_wrt_αs(model.positions, α, s) do positions_αs
         PDPψk(basis, positions_αs, psp_groups, kpt, kpt, ψk)
     end
+end
+
+# Cartesian displacement derivatives β of atom s: ∂/∂R_β = Σ_α (L⁻¹)_{αβ} ∂/∂x_α.
+function apply_nonlocal_displacement_derivative_cart(basis, ik, s, ψk)
+    red = [apply_nonlocal_displacement_derivative(basis, ik, α, s, ψk) for α = 1:3]
+    inv_lattice = basis.model.inv_lattice
+    [sum(inv_lattice[α, β] .* red[α] for α = 1:3) for β = 1:3]
 end
 
 # H^{τ_κβ} ψk for the three Cartesian displacements β of atom `potentials.atoms[iatom]`.
@@ -235,12 +274,23 @@ for models with nonlinear core correction, the displaced-core XC term. Same layo
 """
 function nabec_bare_potentials(scfres; atoms=eachindex(scfres.basis.model.positions))
     basis = scfres.basis
+    model = basis.model
+    T = eltype(basis)
     atoms = collect(atoms)
     xc_terms = filter(t -> t isa TermXc, basis.terms)
+    # Local pseudopotential: V(G) = Σ_s f_s(|G|) e^{-2πi G·x_s} / √Ω, so the displacement of
+    # atom s only changes its own term: ∂V/∂x_sα (G) = -2πi G_α f_s(|G|) e^{-2πi G·x_s} / √Ω.
+    form_factors, iG2ifnorm = atomic_local_form_factors(basis)
+    group_of = Dict(i => ig for (ig, group) in enumerate(model.atom_groups) for i in group)
+    Gs = vec(G_vectors(basis))
     δVbare = map(Iterators.product(1:3, atoms)) do (α, s)
-        δVloc = derivative_wrt_αs(basis.model.positions, α, s) do positions_αs
-            compute_local_potential(basis; positions=positions_αs)
+        ff = @view form_factors[:, group_of[s]]
+        x  = model.positions[s]
+        δV_fourier = map(eachindex(Gs)) do iG
+            -2T(π) * im * Gs[iG][α] * cis2pi(-dot(Gs[iG], x)) * ff[iG2ifnorm[iG]] /
+                sqrt(model.unit_cell_volume)
         end
+        δVloc = irfft(basis, reshape(δV_fourier, basis.fft_size))
         for term in xc_terms
             δVcore = xc_core_displacement_potential(term, basis, α, s; ρ=scfres.ρ)
             isnothing(δVcore) || (δVloc = δVloc .+ δVcore[:, :, :, 1])
@@ -301,7 +351,7 @@ function compute_nabec_field(scfres; atoms=eachindex(scfres.basis.model.position
     @assert model.n_spin_components == 1 "Spin-polarized case not implemented"
     atoms = collect(atoms)
     εF = scfres.εF
-    bare = nabec_bare_potentials(scfres; atoms)
+    bare = @timing "nabec: bare potentials" nabec_bare_potentials(scfres; atoms)
 
     n_occ = maximum(count(>(occupation_threshold), fk) for fk in scfres.occupation)
     n_bands = something(n_bands, n_occ + max(8, n_occ ÷ 4))
@@ -332,8 +382,9 @@ function compute_nabec_field(scfres; atoms=eachindex(scfres.basis.model.position
         vψ = [v[α](ψO) for α = 1:3]
         A  = [ψP' * vψ[α] for α = 1:3]
         w  = @timing "nabec: velocity Sternheimer" [δ⊥(δ⊥(vψ[α])) for α = 1:3]  # Q(H-ε)⁻²Q v u_n
+        # Nonlocal part of B; its local part is ∫ ρ̃ δV_loc (below), with no band loop
         @timing "nabec: bare band sum" for ia in eachindex(atoms)
-            Hτψ = apply_phonon_hamiltonian(basis, bare, ik, ψO, ia; screened=false)
+            Hτψ = apply_nonlocal_displacement_derivative_cart(basis, ik, atoms[ia], ψO)
             for β = 1:3
                 B = ψP' * Hτψ[β]
                 for α = 1:3
@@ -380,10 +431,24 @@ function compute_nabec_field(scfres; atoms=eachindex(scfres.basis.model.position
     end
 
     # 3. Tr[γ⁽¹⁾ H_b] = Σ_k w_k Σ_n [δocc_n ⟨ψ_n|H_b|ψ_n⟩ + 2 occ_n Re⟨δψ_n|H_b ψ_n⟩]
+    #    Local part of H_b: ∫ (ρ̃ + δρ_γ) δV_loc, i.e. the local parts of B and of the trace
+    #    together (δρ_γ = χ0 δV is the density of γ⁽¹⁾). Nonlocal part: atom-local projectors.
+    @timing "nabec: local parts" begin
+        δρ_γ = [compute_δρ(basis, scfres.ψ, responses[α].δψ, scfres.occupation,
+                           responses[α].δoccupation;
+                           occupation_threshold=scfres.occupation_threshold) for α = 1:3]
+        inv_lattice = model.inv_lattice
+        for ia in eachindex(atoms), β = 1:3
+            δVβ = sum(inv_lattice[γ, β] .* bare.δVbare[γ, ia] for γ = 1:3)  # Cartesian β
+            for α = 1:3
+                Zel[ia][α, β] += sum((ρ̃[α] .+ δρ_γ[α])[:, :, :, 1] .* δVβ) * basis.dvol
+            end
+        end
+    end
     @timing "nabec: trace with bare H" for (ik, kpt) in enumerate(basis.kpoints), ia in eachindex(atoms)
         ψk  = scfres.ψ[ik]
         occ = scfres.occupation[ik]
-        Hτψ = apply_phonon_hamiltonian(basis, bare, ik, ψk, ia; screened=false)
+        Hτψ = apply_nonlocal_displacement_derivative_cart(basis, ik, atoms[ia], ψk)
         for α = 1:3, β = 1:3
             δocc, δψk = responses[α].δoccupation[ik], responses[α].δψ[ik]
             tr_γH = sum(δocc[n] * real(dot(ψk[:, n], Hτψ[β][:, n])) +
