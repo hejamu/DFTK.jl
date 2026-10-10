@@ -201,7 +201,8 @@ end
     Na = ElementPsp(:Na, dojo); Cl = ElementPsp(:Cl, dojo)
     lattice = 10.40 / 2 * [[0 1 1.]; [1 0 1.]; [1 1 0.]]
     model = model_DFT(lattice, [Na, Cl, Cl], [zeros(3), [0.5, 0.47, 0.52], [0.21, 0.3, 0.77]];
-                      functionals=LDA(), symmetries=false)
+                      functionals=LDA(), symmetries=false, temperature=0.01,
+                      smearing=Smearing.Gaussian())     # odd electron count
     basis = PlaneWaveBasis(model; Ecut=12, kgrid=ExplicitKpoints([[0.1, 0.2, -0.15]]))
     scfres = self_consistent_field(basis; tol=1e-8, callback=identity)
     ψk = scfres.ψ[1]
