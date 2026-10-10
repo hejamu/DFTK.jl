@@ -310,6 +310,7 @@ function compute_nabec_field(scfres; atoms=eachindex(scfres.basis.model.position
     diag.converged || @warn "Band diagonalization for NABECs not converged"
 
     # 1. Band sum with the bare phonon Hamiltonian, and the source densities ρ̃^α
+    verbose && @info "compute_nabec_field: bands done" n_bands
     Zel = [zeros(T, 3, 3) for _ in atoms]
     ψ_src  = [[similar(diag.X[ik], 0, 0) for ik in eachindex(basis.kpoints)] for _ = 1:3]
     δψ_src = deepcopy(ψ_src)
@@ -330,8 +331,8 @@ function compute_nabec_field(scfres; atoms=eachindex(scfres.basis.model.position
         v  = velocity_operators(basis, ik)
         vψ = [v[α](ψO) for α = 1:3]
         A  = [ψP' * vψ[α] for α = 1:3]
-        w  = [δ⊥(δ⊥(vψ[α])) for α = 1:3]                 # Q(H-ε)⁻²Q v u_n
-        for ia in eachindex(atoms)
+        w  = @timing "nabec: velocity Sternheimer" [δ⊥(δ⊥(vψ[α])) for α = 1:3]  # Q(H-ε)⁻²Q v u_n
+        @timing "nabec: bare band sum" for ia in eachindex(atoms)
             Hτψ = apply_phonon_hamiltonian(basis, bare, ik, ψO, ia; screened=false)
             for β = 1:3
                 B = ψP' * Hτψ[β]
@@ -353,6 +354,7 @@ function compute_nabec_field(scfres; atoms=eachindex(scfres.basis.model.position
         end
     end
     ρ̃ = [compute_δρ(basis, ψ_src[α], δψ_src[α], occ_src[α]) for α = 1:3]
+    verbose && @info "compute_nabec_field: band sum and source densities done"
     ψ_src = δψ_src = nothing
 
     # 2. Screened field responses δV^α = K (1 - χ0 K)⁻¹ ρ̃^α and their density matrices γ⁽¹⁾
@@ -365,12 +367,12 @@ function compute_nabec_field(scfres; atoms=eachindex(scfres.basis.model.position
         Pδρ .= vec(mix_density(mixing, basis, reshape(δρ, size(ρ)); ham=scfres.ham, basis,
                                ρin=ρ, εF, scfres.eigenvalues, scfres.ψ))
     end
-    responses = map(1:3) do α
+    responses = @timing "nabec: field responses" map(1:3) do α
         info = inexact_gmres(ε_adj, vec(ρ̃[α]); tol, precon, krylovdim=20, maxiter=100, s=100,
                              callback=identity)
         info.converged || @warn "Field response not converged" α
         δV = apply_kernel(basis, reshape(info.x, size(ρ)); ρ)
-        verbose && @info "field response α=$α: $(info.n_iter) GMRES iterations"
+        verbose && @info "field response α=$α: $(info.n_iter) GMRES iterations, converged=$(info.converged)"
         apply_χ0_4P(scfres.ham, scfres.ψ, scfres.occupation, εF, scfres.eigenvalues,
                     multiply_ψ_by_blochwave(basis, scfres.ψ, δV, zero(Vec3{T}));
                     occupation_threshold=scfres.occupation_threshold, bandtolalg,
@@ -378,7 +380,7 @@ function compute_nabec_field(scfres; atoms=eachindex(scfres.basis.model.position
     end
 
     # 3. Tr[γ⁽¹⁾ H_b] = Σ_k w_k Σ_n [δocc_n ⟨ψ_n|H_b|ψ_n⟩ + 2 occ_n Re⟨δψ_n|H_b ψ_n⟩]
-    for (ik, kpt) in enumerate(basis.kpoints), ia in eachindex(atoms)
+    @timing "nabec: trace with bare H" for (ik, kpt) in enumerate(basis.kpoints), ia in eachindex(atoms)
         ψk  = scfres.ψ[ik]
         occ = scfres.occupation[ik]
         Hτψ = apply_phonon_hamiltonian(basis, bare, ik, ψk, ia; screened=false)
